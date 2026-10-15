@@ -91,6 +91,18 @@ def get_payment(session: Session, payment_id: int) -> Payment:
     return payment
 
 
+def list_payments(
+    session: Session, email: str | None = None, status: PaymentStatus | None = None
+) -> list[Payment]:
+    """Платежи по возрастанию `id`; заданные фильтры `email` и `status` комбинируются по «И»."""
+    query = select(Payment).order_by(Payment.id)
+    if email is not None:
+        query = query.where(Payment.email == email)
+    if status is not None:
+        query = query.where(Payment.status == status)
+    return list(session.scalars(query))
+
+
 def change_status(session: Session, payment_id: int, new_status: PaymentStatus) -> None:
     """Переводит платёж в `new_status`, если переход разрешён.
 

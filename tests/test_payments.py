@@ -466,3 +466,159 @@ def test_integrity_error_not_caused_by_key_is_not_masked(
         create_payment(session, data, idempotency_key)
 
     assert _payments_count(session) == 1
+
+
+# --- GET /payments: фильтры по email и статусу ---
+
+
+def _create(client: TestClient, session: Session, email: str, **overrides: Any) -> int:
+    response = client.post("/payments", json=_body(session, email=email, **overrides))
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _set_status(client: TestClient, payment_id: int, status: str) -> None:
+    response = client.post("/webhooks/bank", json={"payment_id": payment_id, "status": status})
+    assert response.status_code == 200
+
+
+@pytest.fixture
+def listed(client: TestClient, session: Session) -> dict[str, int]:
+    """Четыре платежа: ключ — имя, значение — id (в порядке создания)."""
+    ids = {
+        "a_pending": _create(client, session, "a@example.com"),
+        "b_succeeded": _create(client, session, "b@example.com", method="sbp"),
+        "a_failed": _create(client, session, "a@example.com"),
+        "a_succeeded": _create(
+            client, session, "a@example.com", method="installment", installment_months=3
+        ),
+    }
+    _set_status(client, ids["b_succeeded"], "succeeded")
+    _set_status(client, ids["a_failed"], "failed")
+    _set_status(client, ids["a_succeeded"], "succeeded")
+    return ids
+
+
+def _listed_ids(client: TestClient, **params: str) -> list[int]:
+    response = client.get("/payments", params=params)
+    assert response.status_code == 200
+    return [item["id"] for item in response.json()]
+
+
+def test_list_payments_without_filters_returns_all_sorted_by_id(
+    client: TestClient, session: Session, listed: dict[str, int]
+) -> None:
+    response = client.get("/payments")
+
+    assert response.status_code == 200
+    ids = list(listed.values())
+    assert [item["id"] for item in response.json()] == sorted(ids)
+    assert len(response.json()) == _payments_count(session)
+    # Элементы списка — те же `PaymentOut`, что отдаёт `GET /payments/{id}`.
+    assert response.json() == [client.get(f"/payments/{i}").json() for i in sorted(ids)]
+
+
+def test_list_payments_on_empty_database_returns_empty_list(client: TestClient) -> None:
+    response = client.get("/payments")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_payments_filters_by_email(client: TestClient, listed: dict[str, int]) -> None:
+    ids = _listed_ids(client, email="a@example.com")
+
+    assert ids == [listed["a_pending"], listed["a_failed"], listed["a_succeeded"]]
+
+
+def test_list_payments_filters_by_status(client: TestClient, listed: dict[str, int]) -> None:
+    ids = _listed_ids(client, status="succeeded")
+
+    assert ids == [listed["b_succeeded"], listed["a_succeeded"]]
+
+
+def test_list_payments_filters_by_email_and_status(
+    client: TestClient, listed: dict[str, int]
+) -> None:
+    ids = _listed_ids(client, email="a@example.com", status="succeeded")
+
+    assert ids == [listed["a_succeeded"]]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"email": "nobody@example.com"},
+        {"status": "refunded"},
+        {"email": "b@example.com", "status": "failed"},
+    ],
+    ids=["unknown-email", "no-payment-in-status", "email-and-status-do-not-match"],
+)
+def test_list_payments_without_matches_returns_empty_list(
+    client: TestClient, listed: dict[str, int], params: dict[str, str]
+) -> None:
+    response = client.get("/payments", params=params)
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_payments_email_domain_case_is_normalized_like_on_create(
+    client: TestClient, session: Session
+) -> None:
+    # EmailStr приводит домен к нижнему регистру и при создании, и в фильтре.
+    payment_id = _create(client, session, "Student@Example.COM")
+
+    assert _listed_ids(client, email="Student@EXAMPLE.com") == [payment_id]
+
+
+def test_list_payments_email_local_part_case_matters(client: TestClient, session: Session) -> None:
+    _create(client, session, "Student@example.com")
+
+    assert _listed_ids(client, email="student@example.com") == []
+
+
+def test_list_payments_email_with_plus_sign(client: TestClient, session: Session) -> None:
+    payment_id = _create(client, session, "a+tag@example.com")
+    _create(client, session, "a@example.com")
+
+    # httpx кодирует `+` как %2B; без кодирования сервер увидел бы пробел.
+    assert _listed_ids(client, email="a+tag@example.com") == [payment_id]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [{"status": "paid"}, {"status": ""}, {"email": "not-an-email"}, {"email": ""}],
+    ids=["unknown-status", "empty-status", "invalid-email", "empty-email"],
+)
+def test_list_payments_invalid_filter_is_standard_422(
+    client: TestClient, listed: dict[str, int], params: dict[str, str]
+) -> None:
+    response = client.get("/payments", params=params)
+
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
+
+
+def test_list_payments_does_not_change_anything(
+    client: TestClient, session: Session, listed: dict[str, int]
+) -> None:
+    before = client.get("/payments")
+    assert before.status_code == 200
+
+    filtered = client.get("/payments", params={"email": "a@example.com", "status": "pending"})
+    assert filtered.status_code == 200
+
+    assert client.get("/payments").json() == before.json()
+    assert _payments_count(session) == len(listed)
+
+
+def test_list_payments_openapi_declares_list_and_422(client: TestClient) -> None:
+    operation = client.get("/openapi.json").json()["paths"]["/payments"]["get"]
+
+    schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert schema["type"] == "array"
+    assert schema["items"] == {"$ref": "#/components/schemas/PaymentOut"}
+    assert "422" in operation["responses"]
+    assert {p["name"] for p in operation["parameters"]} == {"email", "status"}
+    assert all(not p["required"] for p in operation["parameters"])

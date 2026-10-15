@@ -1,11 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Header, Path, Response, status
+from fastapi import APIRouter, Header, Path, Query, Response, status
+from pydantic import EmailStr
 
 from app.db import SessionDep
-from app.models import Payment
+from app.models import Payment, PaymentStatus
 from app.schemas import MAX_ID, ErrorOut, PaymentCreate, PaymentOut, UnprocessableOut
-from app.services.payments import create_payment, get_payment
+from app.services.payments import create_payment, get_payment, list_payments
 
 # Длина колонки `payments.idempotency_key`. SQLite её не контролирует, а Postgres на больший ключ
 # ответил бы 500; поэтому предел проверяется как правило валидации (422).
@@ -41,6 +42,27 @@ def post_payment(
     if not created:
         response.status_code = status.HTTP_200_OK
     return payment
+
+
+@router.get(
+    "/payments",
+    response_model=list[PaymentOut],
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": UnprocessableOut,
+            "description": "Invalid email or unknown status in the filter",
+        },
+    },
+)
+def read_payment_list(
+    session: SessionDep,
+    email: Annotated[EmailStr | None, Query(description="Exact email of the payer")] = None,
+    # Псевдоним, чтобы параметр не затенял `fastapi.status`, импортированный в модуле.
+    payment_status: Annotated[
+        PaymentStatus | None, Query(alias="status", description="Payment status")
+    ] = None,
+) -> list[Payment]:
+    return list_payments(session, email, payment_status)
 
 
 @router.get(
