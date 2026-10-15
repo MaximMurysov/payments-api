@@ -4,13 +4,23 @@ from fastapi import APIRouter, Path, status
 
 from app.db import SessionDep
 from app.models import Payment
-from app.schemas import MAX_ID, ErrorOut, PaymentCreate, PaymentOut
+from app.schemas import MAX_ID, ErrorOut, PaymentCreate, PaymentOut, UnprocessableOut
 from app.services.payments import create_payment, get_payment
 
 router = APIRouter(tags=["payments"])
 
 
-@router.post("/payments", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/payments",
+    response_model=PaymentOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": UnprocessableOut,
+            "description": "Validation error, unknown tariff or unknown promo code",
+        }
+    },
+)
 def post_payment(data: PaymentCreate, session: SessionDep) -> Payment:
     return create_payment(session, data)
 

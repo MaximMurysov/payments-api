@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
@@ -57,3 +57,19 @@ class ErrorOut(BaseModel):
     """Тело доменной ошибки (404, 422 от своих обработчиков) — как у HTTPException FastAPI."""
 
     detail: str
+
+
+class ValidationErrorItem(BaseModel):
+    """Ошибка из стандартного ответа FastAPI на ошибку валидации."""
+
+    loc: list[str | int]
+    msg: str
+    type: str
+    input: Any = None
+    ctx: dict[str, Any] | None = None
+
+
+class UnprocessableOut(BaseModel):
+    """Тело 422: список ошибок валидации FastAPI или строка доменной ошибки (`ErrorOut`)."""
+
+    detail: list[ValidationErrorItem] | str

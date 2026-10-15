@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import Payment, PaymentStatus, Tariff
+from app.schemas import UnprocessableOut
 from app.services.pricing import build_schedule
 
 EMAIL = "student@example.com"
@@ -169,6 +170,25 @@ def test_create_installment_payment_with_promo(client: TestClient, session: Sess
     assert body["schedule"] == build_schedule(PRICES_WITH_PROMO["standard"], 12)
 
 
+def test_create_payment_ignores_client_money_and_status(
+    client: TestClient, session: Session
+) -> None:
+    # Сумму, скидку и статус считает сервер: цена — только из таблицы тарифов.
+    body = _body(session, amount=1, discount=1989999, status="succeeded", schedule=[1])
+
+    response = client.post("/payments", json=body)
+
+    assert response.status_code == 201
+    created = response.json()
+    assert (created["amount"], created["discount"]) == (PRICES["standard"], 0)
+    assert created["status"] == "pending"
+    assert created["schedule"] is None
+    stored = _stored(session, created["id"])
+    assert (stored.amount, stored.discount) == (PRICES["standard"], 0)
+    assert stored.status is PaymentStatus.PENDING
+    assert stored.schedule is None
+
+
 def test_each_request_without_idempotency_key_creates_payment(
     client: TestClient, session: Session
 ) -> None:
@@ -188,6 +208,8 @@ def test_create_payment_unknown_promo_is_422(
     assert response.status_code == 422
     # Формат как у HTTPException FastAPI; в сообщении — код как его прислали, без repr-кавычек.
     assert response.json() == {"detail": f"Unknown promo code: {promo_code}"}
+    # Тело соответствует схеме 422, описанной в OpenAPI.
+    UnprocessableOut.model_validate(response.json())
     assert _payments_count(session) == 0
 
 
@@ -196,6 +218,7 @@ def test_create_payment_unknown_tariff_is_422(client: TestClient, session: Sessi
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Tariff 999999 not found"}
+    UnprocessableOut.model_validate(response.json())
     assert _payments_count(session) == 0
 
 
@@ -221,7 +244,20 @@ def test_create_payment_invalid_body_is_standard_422(
     assert response.status_code == 422
     # Стандартный ответ FastAPI на ошибку валидации: список ошибок в `detail`.
     assert isinstance(response.json()["detail"], list)
+    UnprocessableOut.model_validate(response.json())
     assert _payments_count(session) == 0
+
+
+def test_create_payment_documents_both_422_shapes(client: TestClient) -> None:
+    openapi = client.get("/openapi.json").json()
+    response_422 = openapi["paths"]["/payments"]["post"]["responses"]["422"]
+    ref = response_422["content"]["application/json"]["schema"]["$ref"]
+
+    detail = openapi["components"]["schemas"][ref.rsplit("/", 1)[-1]]["properties"]["detail"]
+
+    # Клиент по /docs должен знать оба вида 422: список ошибок валидации FastAPI и строку
+    # доменной ошибки (неизвестный промокод или тариф).
+    assert {variant.get("type") for variant in detail["anyOf"]} == {"array", "string"}
 
 
 def test_get_payment_returns_created_payment(client: TestClient, session: Session) -> None:
