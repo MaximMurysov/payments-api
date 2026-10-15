@@ -1,12 +1,14 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 
 from app import models
 from app.config import Settings
 from app.db import make_engine
+from app.errors import TariffNotFound, UnknownPromoCode
 from app.routers import payments as payments_router
 from app.routers import tariffs as tariffs_router
 from app.services.tariffs import seed_tariffs
@@ -21,6 +23,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_tariffs(session)
     yield
     app.state.engine.dispose()
+
+
+def _unprocessable(message: str) -> JSONResponse:
+    # Доменная ошибка во входных данных — 422 в формате HTTPException FastAPI: {"detail": "..."}.
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": message}
+    )
+
+
+def _add_exception_handlers(app: FastAPI) -> None:
+    """Сервисы бросают доменные исключения из `app.errors`; HTTP-коды им назначаются здесь."""
+
+    @app.exception_handler(UnknownPromoCode)
+    async def unknown_promo_code(request: Request, exc: UnknownPromoCode) -> JSONResponse:
+        # `exc.code`, а не `str(exc)`: там Python-repr для логов (`'NOPE'`).
+        return _unprocessable(f"Unknown promo code: {exc.code}")
+
+    @app.exception_handler(TariffNotFound)
+    async def tariff_not_found(request: Request, exc: TariffNotFound) -> JSONResponse:
+        return _unprocessable(f"Tariff {exc.tariff_id} not found")
 
 
 def create_app(database_url: str | None = None, settings: Settings | None = None) -> FastAPI:
@@ -41,6 +63,7 @@ def create_app(database_url: str | None = None, settings: Settings | None = None
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    _add_exception_handlers(app)
     app.include_router(tariffs_router.router)
     app.include_router(payments_router.router)
 

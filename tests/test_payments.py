@@ -174,3 +174,48 @@ def test_each_request_without_idempotency_key_creates_payment(
 
     assert first["id"] != second["id"]
     assert _payments_count(session) == 2
+
+
+@pytest.mark.parametrize("promo_code", ["NOPE", "kvitto1", "KVITTO 10"])
+def test_create_payment_unknown_promo_is_422(
+    client: TestClient, session: Session, promo_code: str
+) -> None:
+    response = client.post("/payments", json=_body(session, promo_code=promo_code))
+
+    assert response.status_code == 422
+    # Формат как у HTTPException FastAPI; в сообщении — код как его прислали, без repr-кавычек.
+    assert response.json() == {"detail": f"Unknown promo code: {promo_code}"}
+    assert _payments_count(session) == 0
+
+
+def test_create_payment_unknown_tariff_is_422(client: TestClient, session: Session) -> None:
+    response = client.post("/payments", json=_body(session, tariff_id=999999))
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "Tariff 999999 not found"}
+    assert _payments_count(session) == 0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"method": "installment"}, id="installment-without-months"),
+        pytest.param({"method": "installment", "installment_months": 5}, id="months-5"),
+        pytest.param({"method": "card", "installment_months": 3}, id="card-with-months"),
+        pytest.param({"method": "sbp", "installment_months": 6}, id="sbp-with-months"),
+        pytest.param({"method": "cash"}, id="unknown-method"),
+        pytest.param({"email": "not-an-email"}, id="invalid-email"),
+        pytest.param({"tariff_id": True}, id="tariff-id-bool"),
+        pytest.param({"tariff_id": "1"}, id="tariff-id-string"),
+        pytest.param({"promo_code": "X" * 33}, id="promo-too-long"),
+    ],
+)
+def test_create_payment_invalid_body_is_standard_422(
+    client: TestClient, session: Session, overrides: dict[str, Any]
+) -> None:
+    response = client.post("/payments", json=_body(session, **overrides))
+
+    assert response.status_code == 422
+    # Стандартный ответ FastAPI на ошибку валидации: список ошибок в `detail`.
+    assert isinstance(response.json()["detail"], list)
+    assert _payments_count(session) == 0
