@@ -5,7 +5,6 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 
-from app import models
 from app.config import Settings
 from app.db import make_engine
 from app.errors import InvalidTransition, PaymentNotFound, TariffNotFound, UnknownPromoCode
@@ -17,9 +16,7 @@ from app.services.tariffs import seed_tariffs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Metadata берём через модуль моделей: его импорт регистрирует в ней все таблицы,
-    # и это не зависит от того, какие сервисы импортирует main.
-    models.Base.metadata.create_all(app.state.engine)
+    # Таблицы создают миграции (`alembic upgrade head`), а не приложение: схема в одном месте.
     with app.state.session_factory() as session:
         seed_tariffs(session)
     yield

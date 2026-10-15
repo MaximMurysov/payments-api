@@ -1,19 +1,19 @@
 import hashlib
 import hmac
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from itertools import product
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import Settings
 from app.errors import InvalidTransition, PaymentNotFound
-from app.main import create_app
 from app.models import Payment, PaymentStatus
 from app.services import payments as payments_service
 from app.services.payments import can_transition, change_status
@@ -208,10 +208,10 @@ SECRET = "test-webhook-secret"
 
 
 @pytest.fixture
-def signed_client(tmp_path: Path) -> Iterator[TestClient]:
+def signed_client(tmp_path: Path, make_app: Callable[..., FastAPI]) -> Iterator[TestClient]:
     """Приложение с заданным `WEBHOOK_SECRET`: вебхук проверяет подпись."""
     settings = Settings(_env_file=None, webhook_secret=SECRET)
-    app = create_app(f"sqlite:///{(tmp_path / 'signed.db').as_posix()}", settings)
+    app = make_app(f"sqlite:///{(tmp_path / 'signed.db').as_posix()}", settings)
     with TestClient(app) as test_client:
         yield test_client
 

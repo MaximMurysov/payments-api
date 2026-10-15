@@ -1,12 +1,14 @@
 from pathlib import Path
 from typing import Any
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, inspect, select
+from sqlalchemy.exc import OperationalError
 
 from app import models
 from app.config import Settings
@@ -90,3 +92,16 @@ def test_app_seeds_tariffs_on_migrated_database(tmp_path: Path) -> None:
         codes = db_session.scalars(select(models.Tariff.code).order_by(models.Tariff.id)).all()
 
     assert codes == ["basic", "standard", "premium"]
+
+
+def test_startup_without_migrations_fails(tmp_path: Path) -> None:
+    # Схему создают только миграции: приложение само таблицы не создаёт.
+    db_url = f"sqlite:///{(tmp_path / 'empty.db').as_posix()}"
+    app = create_app(db_url, Settings(_env_file=None, webhook_secret=None))
+
+    try:
+        with pytest.raises(OperationalError, match="no such table: tariffs"), TestClient(app):
+            pass
+    finally:
+        # Старт упал до `yield` в lifespan, engine сам не закрылся.
+        app.state.engine.dispose()

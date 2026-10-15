@@ -1,11 +1,13 @@
+from collections.abc import Callable
+
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, event, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings
-from app.main import create_app
 from app.models import Tariff
 from app.services.tariffs import DEFAULT_TARIFFS, seed_tariffs
 
@@ -32,18 +34,20 @@ def test_seed_is_idempotent(client: TestClient, session: Session) -> None:
     assert len(_tariffs(session)) == 3
 
 
-def test_restart_on_same_database_does_not_duplicate(tmp_path) -> None:
+def test_restart_on_same_database_does_not_duplicate(
+    tmp_path, make_app: Callable[..., FastAPI]
+) -> None:
     db_url = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
     # Явные настройки, как в conftest: `.env` разработчика не должен влиять на тест.
     settings = Settings(_env_file=None, webhook_secret=None)
 
-    first = create_app(db_url, settings)
+    first = make_app(db_url, settings)
     with TestClient(first):
         pass
 
     # Проверяем, пока приложение запущено: после выхода lifespan закрывает engine,
     # и новое соединение осталось бы незакрытым.
-    second = create_app(db_url, settings)
+    second = make_app(db_url, settings)
     with TestClient(second), second.state.session_factory() as db_session:
         assert len(_tariffs(db_session)) == 3
 
