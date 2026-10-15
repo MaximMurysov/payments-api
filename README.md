@@ -71,8 +71,17 @@ ruff format --check .        # проверка форматирования
 только при старте) и будет отвечать 500.
 
 Команды записаны в синтаксисе bash: в Git Bash они запускаются как есть. В Windows PowerShell 5.1 `curl` —
-алиас `Invoke-WebRequest`, и команды не работают как есть. Там используйте `curl.exe`, а кавычки внутри JSON
-могут потребовать экранирования. Проще всего Git Bash.
+алиас `Invoke-WebRequest`, и команды не работают как есть. Там используйте `curl.exe`, а JSON передавайте
+из файла, чтобы не экранировать кавычки (проверено на Windows PowerShell 5.1):
+
+```powershell
+'{"tariff_id":1,"email":"a@example.com","method":"card","promo_code":" kvitto10 "}' | Set-Content -Encoding ascii body.json
+curl.exe -s -w " [%{http_code}]" -X POST http://127.0.0.1:8000/payments -H "Content-Type: application/json" -d "@body.json"
+```
+
+Остальные примеры переписываются так же: `curl.exe`, каждая команда в одну строку без `\` в конце строк,
+тело запроса из файла. Файл `body.json` создаётся в текущей папке, после прогона его можно удалить.
+Запросы без тела (`GET`) работают без изменений: `curl.exe -s http://127.0.0.1:8000/tariffs`.
 
 Тарифы: `basic` — 990000, `standard` — 1990000, `premium` — 2990000 (id 1, 2, 3).
 
