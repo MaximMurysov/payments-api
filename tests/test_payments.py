@@ -259,13 +259,25 @@ def test_get_installment_payment_schedule_from_db(
     assert sum(body["schedule"]) == body["amount"] == PRICES_WITH_PROMO["standard"]
 
 
-def test_get_missing_payment_is_404(client: TestClient, session: Session) -> None:
+# 2**31 - 1 — самый большой допустимый id: он проходит валидацию и честно ищется в БД.
+@pytest.mark.parametrize("payment_id", [999999, 2**31 - 1])
+def test_get_missing_payment_is_404(client: TestClient, session: Session, payment_id: int) -> None:
     client.post("/payments", json=_body(session))
 
-    response = client.get("/payments/999999")
+    response = client.get(f"/payments/{payment_id}")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Payment 999999 not found"}
+    assert response.json() == {"detail": f"Payment {payment_id} not found"}
+    assert _payments_count(session) == 1
+
+
+def test_get_payment_documents_404(client: TestClient) -> None:
+    responses = client.get("/openapi.json").json()["paths"]["/payments/{payment_id}"]["get"][
+        "responses"
+    ]
+
+    # Клиент, который читает /docs, должен видеть, что платежа может не быть.
+    assert "404" in responses
 
 
 @pytest.mark.parametrize("payment_id", ["abc", "1.5", "0", "-1", str(2**31)])

@@ -51,3 +51,9 @@ class PaymentOut(BaseModel):
     schedule: list[int] | None
     email: str
     created_at: datetime
+
+
+class ErrorOut(BaseModel):
+    """Тело доменной ошибки (404, 422 от своих обработчиков) — как у HTTPException FastAPI."""
+
+    detail: str
