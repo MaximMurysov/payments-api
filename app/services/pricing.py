@@ -36,6 +36,7 @@ def build_schedule(amount: int, months: int) -> list[int]:
     """График рассрочки: `months` платежей в копейках, сумма ровно равна `amount`.
 
     Платежи отличаются не больше чем на копейку; лишние копейки остатка — в первых платежах.
+    Предусловие: `amount >= 0` (сумма к оплате — цена тарифа минус скидка), его держит вызывающий.
     """
     if months <= 0:
         raise ValueError(f"months must be positive, got {months}")
