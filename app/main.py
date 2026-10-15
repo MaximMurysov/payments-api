@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models
 from app.config import Settings
 from app.db import make_engine
-from app.errors import TariffNotFound, UnknownPromoCode
+from app.errors import PaymentNotFound, TariffNotFound, UnknownPromoCode
 from app.routers import payments as payments_router
 from app.routers import tariffs as tariffs_router
 from app.services.tariffs import seed_tariffs
@@ -43,6 +43,13 @@ def _add_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(TariffNotFound)
     async def tariff_not_found(request: Request, exc: TariffNotFound) -> JSONResponse:
         return _unprocessable(f"Tariff {exc.tariff_id} not found")
+
+    @app.exception_handler(PaymentNotFound)
+    async def payment_not_found(request: Request, exc: PaymentNotFound) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": f"Payment {exc.payment_id} not found"},
+        )
 
 
 def create_app(database_url: str | None = None, settings: Settings | None = None) -> FastAPI:

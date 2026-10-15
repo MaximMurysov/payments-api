@@ -1,9 +1,11 @@
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Path, status
 
 from app.db import SessionDep
 from app.models import Payment
-from app.schemas import PaymentCreate, PaymentOut
-from app.services.payments import create_payment
+from app.schemas import MAX_ID, PaymentCreate, PaymentOut
+from app.services.payments import create_payment, get_payment
 
 router = APIRouter(tags=["payments"])
 
@@ -11,3 +13,8 @@ router = APIRouter(tags=["payments"])
 @router.post("/payments", response_model=PaymentOut, status_code=status.HTTP_201_CREATED)
 def post_payment(data: PaymentCreate, session: SessionDep) -> Payment:
     return create_payment(session, data)
+
+
+@router.get("/payments/{payment_id}", response_model=PaymentOut)
+def read_payment(payment_id: Annotated[int, Path(gt=0, le=MAX_ID)], session: SessionDep) -> Payment:
+    return get_payment(session, payment_id)
