@@ -563,6 +563,17 @@ def test_list_payments_without_matches_returns_empty_list(
     assert response.json() == []
 
 
+def test_list_payments_email_is_matched_exactly_not_as_substring(
+    client: TestClient, session: Session
+) -> None:
+    wanted = _create(client, session, "a@example.com")
+    # Содержат искомый адрес как подстроку (в начале, в конце, в середине).
+    for other in ("aa@example.com", "xa@example.com", "a@example.com.ru", "a@sub.example.com"):
+        _create(client, session, other)
+
+    assert _listed_ids(client, email="a@example.com") == [wanted]
+
+
 def test_list_payments_email_domain_case_is_normalized_like_on_create(
     client: TestClient, session: Session
 ) -> None:
