@@ -15,9 +15,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine.dispose()
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
-    """Собирает приложение. `database_url` нужен тестам: у каждого теста своя база."""
-    settings = Settings()
+def create_app(database_url: str | None = None, settings: Settings | None = None) -> FastAPI:
+    """Собирает приложение.
+
+    Параметры нужны тестам: у каждого теста своя база и свои настройки, независимые от `.env`.
+    `database_url`, если задан, важнее `settings.database_url`.
+    """
+    settings = settings or Settings()
     engine = make_engine(database_url or settings.database_url)
 
     app = FastAPI(title="Payments API", lifespan=lifespan)
