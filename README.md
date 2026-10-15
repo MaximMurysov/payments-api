@@ -22,6 +22,11 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 ```
 
+Если `.venv\Scripts\activate` не запускается с сообщением «running scripts is disabled», разрешите
+выполнение скриптов для текущего пользователя: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+Либо не активируйте окружение и вызывайте его Python напрямую: `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`
+и `.venv\Scripts\python.exe -m uvicorn app.main:app --reload`.
+
 Linux / macOS:
 
 ```bash
@@ -58,6 +63,13 @@ ruff format --check .        # проверка форматирования
 ## Примеры запросов (curl)
 
 Ответы ниже получены на запущенном сервере; суммы в копейках.
+
+Примеры рассчитаны на **пустую базу**: id 1 и 2 и ключ `demo-key-1` работают только на свежем
+`payments.db`. Перед прогоном удалите файл: `rm payments.db` (bash) или `Remove-Item payments.db` (PowerShell).
+
+Команды записаны в синтаксисе bash: в Git Bash они запускаются как есть. В Windows PowerShell 5.1 `curl` —
+алиас `Invoke-WebRequest`, и команды не работают как есть. Там используйте `curl.exe`, а кавычки внутри JSON
+могут потребовать экранирования. Проще всего Git Bash.
 
 Тарифы: `basic` — 990000, `standard` — 1990000, `premium` — 2990000 (id 1, 2, 3).
 
