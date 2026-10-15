@@ -7,7 +7,8 @@ from app.models import Payment
 from app.schemas import MAX_ID, ErrorOut, PaymentCreate, PaymentOut, UnprocessableOut
 from app.services.payments import create_payment, get_payment
 
-# Длина колонки `payments.idempotency_key`: больший ключ Postgres отвергнет с 500, а не 422.
+# Длина колонки `payments.idempotency_key`. SQLite её не контролирует, а Postgres на больший ключ
+# ответил бы 500; поэтому предел проверяется как правило валидации (422).
 MAX_IDEMPOTENCY_KEY = 255
 
 router = APIRouter(tags=["payments"])
