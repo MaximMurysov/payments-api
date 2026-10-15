@@ -170,6 +170,24 @@ def test_create_installment_payment_with_promo(client: TestClient, session: Sess
     assert body["schedule"] == build_schedule(PRICES_WITH_PROMO["standard"], 12)
 
 
+def test_create_payment_ignores_client_money_and_status(
+    client: TestClient, session: Session
+) -> None:
+    # Сумму, скидку и статус считает сервер: цена — только из таблицы тарифов.
+    body = _body(session, amount=1, discount=1989999, status="succeeded", schedule=[1])
+
+    response = client.post("/payments", json=body)
+
+    assert response.status_code == 201
+    created = response.json()
+    assert (created["amount"], created["discount"]) == (PRICES["standard"], 0)
+    assert created["status"] == "pending"
+    assert created["schedule"] is None
+    stored = _stored(session, created["id"])
+    assert (stored.amount, stored.discount) == (PRICES["standard"], 0)
+    assert stored.status is PaymentStatus.PENDING
+
+
 def test_each_request_without_idempotency_key_creates_payment(
     client: TestClient, session: Session
 ) -> None:
