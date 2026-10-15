@@ -1,5 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, event, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -63,3 +65,21 @@ def test_seed_survives_concurrent_seeding(client: TestClient, session: Session) 
     seed_tariffs(session)
 
     assert [t.code for t in _tariffs(session)] == ["basic", "standard", "premium"]
+
+
+def test_seed_reraises_integrity_error_when_table_stays_empty(
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Ошибка в самих данных сида, а не гонка: тарифов так и нет, молча стартовать с пустой
+    # таблицей нельзя.
+    session.execute(delete(Tariff))
+    session.commit()
+    monkeypatch.setattr(
+        "app.services.tariffs.DEFAULT_TARIFFS",
+        (("basic", "Базовый", 990000), ("basic", "Дубль", 990000)),
+    )
+
+    with pytest.raises(IntegrityError):
+        seed_tariffs(session)
+
+    assert _tariffs(session) == []

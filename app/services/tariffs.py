@@ -25,6 +25,10 @@ def seed_tariffs(session: Session) -> None:
         # Другой воркер заполнил таблицу между проверкой и вставкой: UNIQUE(code) не дал
         # создать дубли, а наш commit откатываем и считаем работу выполненной.
         session.rollback()
+        # Если тарифов так и нет, это не гонка, а ошибка в данных: глотать её нельзя,
+        # иначе приложение молча стартует с пустой таблицей.
+        if session.scalar(select(Tariff.id).limit(1)) is None:
+            raise
 
 
 def list_tariffs(session: Session) -> list[Tariff]:
