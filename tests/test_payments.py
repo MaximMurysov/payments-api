@@ -4,10 +4,13 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Payment, PaymentStatus, Tariff
-from app.schemas import UnprocessableOut
+from app.models import Payment, PaymentMethod, PaymentStatus, Tariff
+from app.schemas import PaymentCreate, UnprocessableOut
+from app.services import payments as payments_service
+from app.services.payments import create_payment
 from app.services.pricing import build_schedule
 
 EMAIL = "student@example.com"
@@ -417,3 +420,49 @@ def test_payment_without_idempotency_key_is_stored_with_null_key(
 
     assert response.status_code == 201
     assert _stored(session, response.json()["id"]).idempotency_key is None
+
+
+def test_concurrent_insert_with_same_key_returns_existing_payment(
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _post_with_key(client, "key-1", _body(session))
+    real_find = payments_service._find_by_idempotency_key
+    calls: list[str] = []
+
+    def find_missing_once(db_session: Session, key: str) -> Payment | None:
+        # Первый поиск «не видит» платёж: параллельный запрос вставил его между SELECT и INSERT.
+        calls.append(key)
+        return None if len(calls) == 1 else real_find(db_session, key)
+
+    monkeypatch.setattr(payments_service, "_find_by_idempotency_key", find_missing_once)
+
+    second = _post_with_key(client, "key-1", _body(session))
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert len(calls) == 2
+    assert _payments_count(session) == 1
+
+
+@pytest.mark.parametrize("idempotency_key", [None, "key-1"])
+def test_integrity_error_not_caused_by_key_is_not_masked(
+    client: TestClient,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    idempotency_key: str | None,
+) -> None:
+    # Ошибка целостности не из-за ключа: платежа с таким ключом нет (или ключа нет вовсе).
+    # Такой отказ нельзя выдавать за успешный повтор. Уже лежащий платёж без ключа — приманка:
+    # поиск по `None` (`IS NULL`) нашёл бы его и выдал за результат.
+    client.post("/payments", json=_body(session))
+
+    def failing_commit() -> None:
+        raise IntegrityError("INSERT INTO payments", {}, Exception("boom"))
+
+    monkeypatch.setattr(session, "commit", failing_commit)
+    data = PaymentCreate(tariff_id=_tariff_id(session), email=EMAIL, method=PaymentMethod.CARD)
+
+    with pytest.raises(IntegrityError):
+        create_payment(session, data, idempotency_key)
+
+    assert _payments_count(session) == 1
