@@ -26,7 +26,8 @@ services:
       # Пусто — подпись вебхука не проверяется; значение берётся из окружения или из `.env`.
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
     ports:
-      - "8000:8000"
+      # Только loopback: без `WEBHOOK_SECRET` API не защищён и не должен быть виден из сети.
+      - "127.0.0.1:8000:8000"
 
 volumes:
   pgdata:
