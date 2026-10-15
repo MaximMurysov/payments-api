@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.errors import InvalidTransition, PaymentNotFound
 from app.models import Payment, PaymentStatus
+from app.services import payments as payments_service
 from app.services.payments import can_transition, change_status
 
 ALLOWED_PAIRS = {
@@ -134,13 +135,26 @@ def test_change_status_unknown_payment_raises(session: Session) -> None:
 
 
 def test_change_status_loses_race_when_status_changed_after_read(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Параллельный вебхук успел сменить статус между чтением платежа и UPDATE.
 
     Проверка `can_transition` на устаревшем статусе проходит, поэтому инвариант держит только
     условный UPDATE: `rowcount == 0` → `InvalidTransition`, статус победителя не затёрт.
     """
+    # Шпион за предпроверкой: тест обязан дойти до UPDATE, а не упасть уже на `can_transition`.
+    # Identity map держит объекты слабыми ссылками: не будь живой ссылки `payment`, сессия
+    # перечитала бы строку и увидела `succeeded`. Шпион зафиксирует запрет, и тест упадёт,
+    # а не вырожденно пройдёт мимо ветки `rowcount == 0`.
+    prechecks: list[tuple[PaymentStatus, bool]] = []
+    real_can_transition = payments_service.can_transition
+
+    def spy(old: PaymentStatus, new: PaymentStatus) -> bool:
+        allowed = real_can_transition(old, new)
+        prechecks.append((old, allowed))
+        return allowed
+
+    monkeypatch.setattr(payments_service, "can_transition", spy)
     payment_id = _create_payment(client)
     # Платёж в identity map сессии со статусом pending — как у запроса, прочитавшего его до гонки.
     payment = session.get(Payment, payment_id)
@@ -155,6 +169,8 @@ def test_change_status_loses_race_when_status_changed_after_read(
     with pytest.raises(InvalidTransition):
         change_status(session, payment_id, PaymentStatus.FAILED)
 
+    # Предпроверка видела устаревший pending и пропустила; отказал именно условный UPDATE.
+    assert prechecks == [(PaymentStatus.PENDING, True)]
     with client.app.state.session_factory() as check:
         stored = check.scalar(select(Payment.status).where(Payment.id == payment_id))
     assert stored is PaymentStatus.SUCCEEDED
