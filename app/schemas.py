@@ -53,6 +53,21 @@ class PaymentOut(BaseModel):
     created_at: datetime
 
 
+class WebhookIn(BaseModel):
+    payment_id: int = Field(strict=True, gt=0, le=MAX_ID)
+    status: PaymentStatus
+
+
+class WebhookOk(BaseModel):
+    result: Literal["ok"]
+
+
+class InvalidTransitionOut(BaseModel):
+    """Тело 409 вебхука: формат задан ТЗ."""
+
+    error: Literal["invalid_transition"]
+
+
 class ErrorOut(BaseModel):
     """Тело доменной ошибки (404, 422 от своих обработчиков) — как у HTTPException FastAPI."""
 

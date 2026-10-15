@@ -8,9 +8,10 @@ from sqlalchemy.orm import sessionmaker
 from app import models
 from app.config import Settings
 from app.db import make_engine
-from app.errors import PaymentNotFound, TariffNotFound, UnknownPromoCode
+from app.errors import InvalidTransition, PaymentNotFound, TariffNotFound, UnknownPromoCode
 from app.routers import payments as payments_router
 from app.routers import tariffs as tariffs_router
+from app.routers import webhooks as webhooks_router
 from app.services.tariffs import seed_tariffs
 
 
@@ -46,6 +47,13 @@ def _add_exception_handlers(app: FastAPI) -> None:
     async def payment_not_found(request: Request, exc: PaymentNotFound) -> JSONResponse:
         return _detail(status.HTTP_404_NOT_FOUND, f"Payment {exc.payment_id} not found")
 
+    @app.exception_handler(InvalidTransition)
+    async def invalid_transition(request: Request, exc: InvalidTransition) -> JSONResponse:
+        # Формат 409 задан ТЗ буквально: не `{"detail": ...}`, поэтому не HTTPException.
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT, content={"error": "invalid_transition"}
+        )
+
 
 def create_app(database_url: str | None = None, settings: Settings | None = None) -> FastAPI:
     """Собирает приложение.
@@ -68,6 +76,7 @@ def create_app(database_url: str | None = None, settings: Settings | None = None
     _add_exception_handlers(app)
     app.include_router(tariffs_router.router)
     app.include_router(payments_router.router)
+    app.include_router(webhooks_router.router)
 
     return app
 
