@@ -1,7 +1,8 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 
 from app.db import SessionDep
 from app.schemas import ErrorOut, InvalidTransitionOut, UnprocessableOut, WebhookIn, WebhookOk
+from app.security import verify_signature
 from app.services.payments import change_status
 
 router = APIRouter(tags=["webhooks"])
@@ -10,7 +11,12 @@ router = APIRouter(tags=["webhooks"])
 @router.post(
     "/webhooks/bank",
     response_model=WebhookOk,
+    dependencies=[Depends(verify_signature)],
     responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorOut,
+            "description": "X-Signature is missing or invalid (only when WEBHOOK_SECRET is set)",
+        },
         status.HTTP_404_NOT_FOUND: {"model": ErrorOut, "description": "Payment not found"},
         status.HTTP_409_CONFLICT: {
             "model": InvalidTransitionOut,

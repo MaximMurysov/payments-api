@@ -44,7 +44,7 @@ uvicorn app.main:app --reload
 | Переменная       | По умолчанию              | Смысл                                                                       |
 | ---------------- | ------------------------- | --------------------------------------------------------------------------- |
 | `DATABASE_URL`   | `sqlite:///./payments.db` | Строка подключения к БД; путь к SQLite относительный (файл в папке запуска) |
-| `WEBHOOK_SECRET` | пусто                     | Секрет подписи вебхука; пока не используется, см. «Принятые решения»        |
+| `WEBHOOK_SECRET` | пусто                     | Секрет подписи вебхука (`X-Signature`); пусто — подпись не проверяется      |
 
 ## Тесты и линтер
 
@@ -162,6 +162,43 @@ curl -s -X POST http://127.0.0.1:8000/webhooks/bank \
 
 Допустимые переходы: `pending → succeeded`, `pending → failed`, `succeeded → refunded`.
 
+**Вебхук с подписью** (только если задан `WEBHOOK_SECRET`) → `200`; без подписи или с неверной → `401`
+
+Задайте секрет в `.env` (`WEBHOOK_SECRET=s3cret`) или в переменной окружения и перезапустите сервер.
+Подпись — hex (строчными буквами) HMAC-SHA256 от **сырых байтов** тела запроса, ровно в том виде, в каком
+тело отправляется. Пример подразумевает, что платёж 2 после предыдущих примеров в статусе `succeeded`:
+
+```bash
+BODY='{"payment_id":2,"status":"refunded"}'
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "s3cret" | awk '{print $NF}')
+curl -s -X POST http://127.0.0.1:8000/webhooks/bank \
+  -H "Content-Type: application/json" -H "X-Signature: $SIG" -d "$BODY"
+```
+
+```json
+{"result":"ok"}
+```
+
+Неверная или отсутствующая подпись → `401`, платёж не меняется (`{"detail":"Invalid signature"}` или
+`{"detail":"Missing signature"}`):
+
+```bash
+curl -s -w " [%{http_code}]" -X POST http://127.0.0.1:8000/webhooks/bank \
+  -H "Content-Type: application/json" -H "X-Signature: deadbeef" -d "$BODY"
+```
+
+В Windows PowerShell 5.1 нет `openssl`: подпись считается средствами .NET, тело берётся из файла
+(`--data-binary`, а не `-d`: `-d @файл` удаляет переводы строк, и подпись разошлась бы с телом):
+
+```powershell
+$body = '{"payment_id":2,"status":"refunded"}'
+[IO.File]::WriteAllText("$PWD\body.json", $body)
+$h = New-Object System.Security.Cryptography.HMACSHA256
+$h.Key = [Text.Encoding]::UTF8.GetBytes("s3cret")
+$sig = -join ($h.ComputeHash([Text.Encoding]::UTF8.GetBytes($body)) | ForEach-Object { $_.ToString("x2") })
+curl.exe -s -X POST http://127.0.0.1:8000/webhooks/bank -H "Content-Type: application/json" -H "X-Signature: $sig" --data-binary "@body.json"
+```
+
 ## Принятые решения
 
 - **Несуществующий `tariff_id` → 422**, а не 404. ТЗ молчит; ссылка в теле запроса считается невалидной.
@@ -180,8 +217,14 @@ curl -s -X POST http://127.0.0.1:8000/webhooks/bank \
 - **Повтор того же статуса вебхуком → `409`** (по букве ТЗ: допустимы только перечисленные переходы).
 - **Запрещённый переход не меняет статус:** смена выполняется `UPDATE ... WHERE status = :old`, гонка двух
   вебхуков тоже даёт `409`.
-- **Вебхук не проверяет подпись.** Поле `WEBHOOK_SECRET` есть в настройках, но проверка подписи
-  (`X-Signature`) не реализована: это бонусная фича, в основной части ТЗ её нет.
+- **Подпись вебхука проверяется, только если задан `WEBHOOK_SECRET`.** Это бонус вне основной части ТЗ.
+  Без секрета вебхук принимает любые запросы. С секретом нужен заголовок `X-Signature`: HMAC-SHA256 от
+  сырых байтов тела, hex строчными буквами; нет заголовка или подпись не совпала → `401`
+  (`{"detail": "Missing signature"}` / `{"detail": "Invalid signature"}`), платёж не меняется. Подпись
+  проверяется раньше валидации тела и поиска платежа, поэтому `404`/`409`/`422` не показывают
+  постороннему, существует ли платёж. Исключение: синтаксически битый JSON получает `422` ещё до
+  проверки подписи (FastAPI разбирает JSON раньше зависимостей); про платежи такой ответ ничего не
+  раскрывает.
 - **SQLite по умолчанию**, чтобы проект запускался без внешних сервисов. Другая БД задаётся через
   `DATABASE_URL`, но драйвер Postgres в `requirements*.txt` не входит (его нужно установить самостоятельно),
   и приложение на Postgres не проверялось.
