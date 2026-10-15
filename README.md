@@ -46,6 +46,34 @@ uvicorn app.main:app --reload
 | `DATABASE_URL`   | `sqlite:///./payments.db` | Строка подключения к БД; путь к SQLite относительный (файл в папке запуска) |
 | `WEBHOOK_SECRET` | пусто                     | Секрет подписи вебхука (`X-Signature`); пусто — подпись не проверяется      |
 
+### Запуск в Docker (API + Postgres)
+
+Нужен Docker с Compose (проверено на Docker Desktop, Compose v5). Версия Python на хосте не важна:
+
+```bash
+docker compose up --build
+```
+
+Поднимаются Postgres 16 и API; API стартует после того, как база ответила на проверку готовности.
+Swagger — <http://127.0.0.1:8000/docs>, curl-примеры ниже работают без изменений. API публикуется только
+на `127.0.0.1:8000` (из локальной сети недоступен); порт должен быть свободен: остановите локальный
+`uvicorn`, если он запущен.
+
+Секрет подписи вебхука передаётся через окружение или `.env` в папке проекта (по умолчанию подпись не
+проверяется):
+
+```bash
+WEBHOOK_SECRET=s3cret docker compose up --build            # bash
+```
+
+```powershell
+$env:WEBHOOK_SECRET = "s3cret"; docker compose up --build  # PowerShell
+```
+
+Остановка — Ctrl+C или `docker compose down`. Данные Postgres лежат в томе и сохраняются между
+запусками; начать с чистой базы — `docker compose down -v`. Учётные данные БД (`payments` / `payments`)
+в `docker-compose.yml` годятся только для локальной разработки.
+
 ## Тесты и линтер
 
 ```bash
@@ -246,8 +274,10 @@ curl.exe -s -X POST http://127.0.0.1:8000/webhooks/bank -H "Content-Type: applic
   проверки подписи (FastAPI разбирает JSON раньше зависимостей); про платежи такой ответ ничего не
   раскрывает.
 - **SQLite по умолчанию**, чтобы проект запускался без внешних сервисов. Другая БД задаётся через
-  `DATABASE_URL`, но драйвер Postgres в `requirements*.txt` не входит (его нужно установить самостоятельно),
-  и приложение на Postgres не проверялось.
+  `DATABASE_URL`; драйвер Postgres (`psycopg`) входит в `requirements.txt`. На Postgres 16 (Docker
+  Compose) вручную проверены сценарии из примеров ниже, гонка двух вебхуков на один платёж (ровно один
+  `200` и один `409`, статус победителя не затёрт) и гонка запросов с одним `Idempotency-Key` (создаётся
+  один платёж). Автотесты идут только на SQLite.
 - **Ошибки валидации** — стандартный формат FastAPI (`422`, `detail` — список).
 
 ## Структура проекта
@@ -258,5 +288,7 @@ app/config.py       # настройки; app/db.py — engine и сессия �
 app/models.py       # Tariff, Payment, enum-ы; schemas.py — Pydantic-схемы; errors.py — исключения
 app/services/       # pricing.py — чистые функции денег; payments.py, tariffs.py — бизнес-правила
 app/routers/        # HTTP: tariffs.py, payments.py, webhooks.py
+Dockerfile          # образ API (python:3.11-slim); .dockerignore — белый список для сборки
+docker-compose.yml  # API + Postgres 16 для локального запуска
 tests/              # unit-тесты (pricing) и API-тесты (TestClient) с проверкой состояния БД
 ```

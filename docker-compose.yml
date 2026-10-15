@@ -1,0 +1,33 @@
+# Локальный запуск: API + Postgres. Учётные данные ниже — только для разработки.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments
+      POSTGRES_DB: payments
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `-h 127.0.0.1`: проверка по TCP, как подключается `app`. Без `-h` проверяется unix-сокет, а на
+      # пустом томе временный сервер инициализации отвечает на сокете раньше, чем на TCP.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U payments -d payments"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://payments:payments@db:5432/payments
+      # Пусто — подпись вебхука не проверяется; значение берётся из окружения или из `.env`.
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+    ports:
+      # Только loopback: без `WEBHOOK_SECRET` API не защищён и не должен быть виден из сети.
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  pgdata:
