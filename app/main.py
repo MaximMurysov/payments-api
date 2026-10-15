@@ -6,11 +6,15 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
 from app.db import Base, make_engine
+from app.services.tariffs import seed_tariffs
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Модели попадают в Base.metadata через импорт сервисов выше (services → app.models).
     Base.metadata.create_all(app.state.engine)
+    with app.state.session_factory() as session:
+        seed_tariffs(session)
     yield
     app.state.engine.dispose()
 
