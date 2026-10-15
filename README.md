@@ -5,7 +5,20 @@
 
 Реализация тестового задания (далее — ТЗ).
 
-Стек: Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x (синхронно), SQLite по умолчанию, pytest + httpx, ruff.
+Стек: Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x (синхронно), Alembic, SQLite по умолчанию (Postgres 16
+через Docker Compose), pytest + httpx, ruff.
+
+## Бонусы
+
+Сверх основной части ТЗ сделано:
+
+- **Подпись вебхука** — `X-Signature` (HMAC-SHA256 от сырого тела), включается переменной `WEBHOOK_SECRET`;
+  пример — в разделе «Примеры запросов».
+- **`GET /payments` с фильтрами** `email` и `status`.
+- **Docker Compose** — API + Postgres 16 одной командой, раздел «Запуск в Docker».
+- **Миграции Alembic** — схема БД создаётся только миграциями (`migrations/`).
+- **CI** — GitHub Actions: ruff и pytest на Python 3.11 и 3.14 на каждый push.
+- **Правила для ИИ-ассистента** — `CLAUDE.md` (цикл фичи, TDD, границы изменений, коммиты, ревью).
 
 ## Требования
 
@@ -205,6 +218,9 @@ curl -s -X POST http://127.0.0.1:8000/webhooks/bank \
 {"error":"invalid_transition"}
 ```
 
+Каждый такой отказ сервер пишет в свой лог (в терминал, где запущен `uvicorn`):
+`invalid status transition: payment_id=2 succeeded -> succeeded`.
+
 Допустимые переходы: `pending → succeeded`, `pending → failed`, `succeeded → refunded`.
 
 **Список платежей с фильтрами** → `200`, отсортирован по `id`; `email` и `status` необязательны и
@@ -300,6 +316,9 @@ curl.exe -s -X POST http://127.0.0.1:8000/webhooks/bank -H "Content-Type: applic
   Миграции не импортируют код приложения: enum-колонки в них — `VARCHAR` с явным `CHECK`, как их создаёт
   модель. Автотесты миграций идут на SQLite; на Postgres 16 вручную проверено, что схема после миграции
   совпадает с моделями.
+- **Отказ вебхуку из-за запрещённого перехода пишется в лог** уровнем `WARNING`: номер платежа, старый и
+  новый статус. Тело запроса, заголовки (подпись) и секрет в лог не попадают. Отдельной настройки
+  логирования нет: сообщение выводится в stderr стандартным обработчиком Python, простым текстом.
 - **Ошибки валидации** — стандартный формат FastAPI (`422`, `detail` — список).
 
 ## Структура проекта
