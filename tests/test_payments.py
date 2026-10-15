@@ -4,11 +4,13 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import Payment, PaymentStatus, Tariff
-from app.schemas import UnprocessableOut
+from app.models import Payment, PaymentMethod, PaymentStatus, Tariff
+from app.schemas import PaymentCreate, UnprocessableOut
 from app.services import payments as payments_service
+from app.services.payments import create_payment
 from app.services.pricing import build_schedule
 
 EMAIL = "student@example.com"
@@ -439,4 +441,28 @@ def test_concurrent_insert_with_same_key_returns_existing_payment(
     assert second.status_code == 200
     assert second.json() == first.json()
     assert len(calls) == 2
+    assert _payments_count(session) == 1
+
+
+@pytest.mark.parametrize("idempotency_key", [None, "key-1"])
+def test_integrity_error_not_caused_by_key_is_not_masked(
+    client: TestClient,
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    idempotency_key: str | None,
+) -> None:
+    # Ошибка целостности не из-за ключа: платежа с таким ключом нет (или ключа нет вовсе).
+    # Такой отказ нельзя выдавать за успешный повтор. Уже лежащий платёж без ключа — приманка:
+    # поиск по `None` (`IS NULL`) нашёл бы его и выдал за результат.
+    client.post("/payments", json=_body(session))
+
+    def failing_commit() -> None:
+        raise IntegrityError("INSERT INTO payments", {}, Exception("boom"))
+
+    monkeypatch.setattr(session, "commit", failing_commit)
+    data = PaymentCreate(tariff_id=_tariff_id(session), email=EMAIL, method=PaymentMethod.CARD)
+
+    with pytest.raises(IntegrityError):
+        create_payment(session, data, idempotency_key)
+
     assert _payments_count(session) == 1
