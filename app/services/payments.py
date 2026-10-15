@@ -1,8 +1,8 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.errors import PaymentNotFound, TariffNotFound
+from app.errors import InvalidTransition, PaymentNotFound, TariffNotFound
 from app.models import Payment, PaymentStatus, Tariff
 from app.schemas import PaymentCreate
 from app.services.pricing import build_schedule, calc_discount, normalize_promo_code, resolve_promo
@@ -88,3 +88,26 @@ def get_payment(session: Session, payment_id: int) -> Payment:
     if payment is None:
         raise PaymentNotFound(payment_id)
     return payment
+
+
+def change_status(session: Session, payment_id: int, new_status: PaymentStatus) -> None:
+    """Переводит платёж в `new_status`, если переход разрешён.
+
+    Нет платежа — `PaymentNotFound`; переход запрещён — `InvalidTransition`, статус не меняется.
+    Инвариант держит БД: `UPDATE ... WHERE status = :old`. Если параллельный вебхук успел сменить
+    статус после нашего чтения, строка не совпадёт (`rowcount == 0`) и это тоже `InvalidTransition`.
+    """
+    old_status = get_payment(session, payment_id).status
+    if not can_transition(old_status, new_status):
+        raise InvalidTransition(old_status, new_status)
+
+    result = session.execute(
+        update(Payment)
+        .where(Payment.id == payment_id, Payment.status == old_status)
+        .values(status=new_status)
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount == 0:
+        session.rollback()
+        raise InvalidTransition(old_status, new_status)
+    session.commit()
