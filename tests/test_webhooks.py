@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import logging
 from collections.abc import Callable, Iterator
 from itertools import product
 from pathlib import Path
@@ -192,9 +193,16 @@ def test_change_status_loses_race_when_status_changed_after_read(
         )
         rival.commit()
 
-    with pytest.raises(InvalidTransition):
+    with pytest.raises(InvalidTransition) as excinfo:
         change_status(session, payment_id, PaymentStatus.FAILED)
 
+    # Ошибка из ветки гонки несёт данные этого запроса: их пишет в лог обработчик 409.
+    error = excinfo.value
+    assert (error.payment_id, error.old, error.new) == (
+        payment_id,
+        PaymentStatus.PENDING,
+        PaymentStatus.FAILED,
+    )
     # Предпроверка видела устаревший pending и пропустила; отказал именно условный UPDATE.
     assert prechecks == [(PaymentStatus.PENDING, True)]
     with client.app.state.session_factory() as check:
@@ -350,3 +358,70 @@ def test_webhook_openapi_declares_401(client: TestClient) -> None:
     assert responses["401"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ErrorOut"
     }
+
+
+# --- Логирование отказа вебхука ---
+
+
+def test_forbidden_transition_raises_with_payment_id(client: TestClient, session: Session) -> None:
+    payment_id = _payment_in_status(client, PaymentStatus.SUCCEEDED)
+
+    with pytest.raises(InvalidTransition) as excinfo:
+        change_status(session, payment_id, PaymentStatus.PENDING)
+
+    error = excinfo.value
+    assert (error.payment_id, error.old, error.new) == (
+        payment_id,
+        PaymentStatus.SUCCEEDED,
+        PaymentStatus.PENDING,
+    )
+
+
+def test_forbidden_transition_logs_warning(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    payment_id = _payment_in_status(client, PaymentStatus.SUCCEEDED)
+
+    with caplog.at_level(logging.WARNING, logger="app.main"):
+        response = _webhook(client, payment_id, "pending")
+
+    assert response.status_code == 409
+    assert [(r.name, r.levelno, r.getMessage()) for r in caplog.records] == [
+        (
+            "app.main",
+            logging.WARNING,
+            f"invalid status transition: payment_id={payment_id} succeeded -> pending",
+        )
+    ]
+
+
+def test_allowed_transition_logs_nothing(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    payment_id = _create_payment(client)
+
+    with caplog.at_level(logging.WARNING):
+        response = _webhook(client, payment_id, "succeeded")
+
+    assert response.status_code == 200
+    assert caplog.records == []
+
+
+def test_invalid_transition_log_has_no_secret_or_signature(
+    signed_client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    payment_id = _create_payment(signed_client)
+    settle = _body(payment_id, "succeeded")
+    assert _post_raw(signed_client, settle, _sign(settle)).status_code == 200
+    body = _body(payment_id, "pending")
+    signature = _sign(body)
+
+    # DEBUG и все логгеры: секрет не должен попасть в лог ни на каком уровне.
+    with caplog.at_level(logging.DEBUG):
+        response = _post_raw(signed_client, body, signature)
+
+    assert response.status_code == 409
+    # Без записи об отказе проверка ниже прошла бы впустую.
+    assert any("invalid status transition" in r.getMessage() for r in caplog.records)
+    assert SECRET not in caplog.text
+    assert signature not in caplog.text

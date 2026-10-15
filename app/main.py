@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,8 @@ from app.routers import payments as payments_router
 from app.routers import tariffs as tariffs_router
 from app.routers import webhooks as webhooks_router
 from app.services.tariffs import seed_tariffs
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -46,6 +49,14 @@ def _add_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidTransition)
     async def invalid_transition(request: Request, exc: InvalidTransition) -> JSONResponse:
+        # Отказ вебхуку пишем в лог, чтобы его было видно на сервере. Только поля платежа: тело
+        # и заголовки запроса (подпись) в лог не попадают.
+        logger.warning(
+            "invalid status transition: payment_id=%s %s -> %s",
+            exc.payment_id,
+            exc.old.value,
+            exc.new.value,
+        )
         # Формат 409 задан ТЗ буквально: не `{"detail": ...}`, поэтому не HTTPException.
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT, content={"error": "invalid_transition"}

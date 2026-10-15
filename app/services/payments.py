@@ -112,7 +112,7 @@ def change_status(session: Session, payment_id: int, new_status: PaymentStatus) 
     """
     old_status = get_payment(session, payment_id).status
     if not can_transition(old_status, new_status):
-        raise InvalidTransition(old_status, new_status)
+        raise InvalidTransition(payment_id, old_status, new_status)
 
     result = session.execute(
         update(Payment)
@@ -123,5 +123,5 @@ def change_status(session: Session, payment_id: int, new_status: PaymentStatus) 
     if result.rowcount == 0:
         # Статус сменил параллельный вебхук (платежи не удаляются, иначе здесь был бы 404).
         session.rollback()
-        raise InvalidTransition(old_status, new_status)
+        raise InvalidTransition(payment_id, old_status, new_status)
     session.commit()
