@@ -25,3 +25,7 @@ def seed_tariffs(session: Session) -> None:
         # Другой воркер заполнил таблицу между проверкой и вставкой: UNIQUE(code) не дал
         # создать дубли, а наш commit откатываем и считаем работу выполненной.
         session.rollback()
+
+
+def list_tariffs(session: Session) -> list[Tariff]:
+    return list(session.scalars(select(Tariff).order_by(Tariff.id)))
