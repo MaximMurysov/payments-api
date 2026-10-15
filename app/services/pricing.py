@@ -10,16 +10,24 @@ from app.errors import UnknownPromoCode
 PROMO_CODES: Final[Mapping[str, int]] = MappingProxyType({"KVITTO10": 10})
 
 
+def normalize_promo_code(code: str | None) -> str | None:
+    """Код в каноническом виде (`KVITTO10`): без пробелов по краям, в верхнем регистре.
+
+    `None` и пустая строка (в том числе из одних пробелов) — промокода нет, результат `None`.
+    """
+    if code is None:
+        return None
+    return code.strip().upper() or None
+
+
 def resolve_promo(code: str | None) -> int:
     """Возвращает процент скидки по промокоду; регистр и пробелы по краям не важны.
 
     `None` и пустая строка (в том числе из одних пробелов) — промокода нет, скидка 0 %.
     Неизвестный код — `UnknownPromoCode`.
     """
-    if code is None:
-        return 0
-    normalized = code.strip().upper()
-    if not normalized:
+    normalized = normalize_promo_code(code)
+    if normalized is None:
         return 0
     percent = PROMO_CODES.get(normalized)
     if percent is None:
