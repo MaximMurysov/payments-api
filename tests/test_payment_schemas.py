@@ -93,3 +93,24 @@ def test_payment_out_exposes_only_public_fields() -> None:
         "email": "student@example.com",
         "created_at": "2026-10-15T12:00:00Z",
     }
+
+
+@pytest.mark.parametrize("months", [3, 6, 12])
+def test_payment_create_accepts_installment_with_months(months: int) -> None:
+    data = PaymentCreate.model_validate(
+        {**VALID_CARD, "method": "installment", "installment_months": months}
+    )
+
+    assert data.installment_months == months
+
+
+def test_payment_create_requires_months_for_installment() -> None:
+    with pytest.raises(ValidationError, match="installment_months"):
+        PaymentCreate.model_validate({**VALID_CARD, "method": "installment"})
+
+
+@pytest.mark.parametrize("method", ["card", "sbp"])
+def test_payment_create_rejects_months_for_non_installment(method: str) -> None:
+    # Невалидная комбинация не должна молча сохраниться с месяцами у оплаты картой.
+    with pytest.raises(ValidationError, match="installment_months"):
+        PaymentCreate.model_validate({**VALID_CARD, "method": method, "installment_months": 3})
