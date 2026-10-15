@@ -7,6 +7,10 @@ from app.schemas import PaymentCreate
 from app.services.pricing import build_schedule, calc_discount, normalize_promo_code, resolve_promo
 
 
+def _find_by_idempotency_key(session: Session, idempotency_key: str) -> Payment | None:
+    return session.scalar(select(Payment).where(Payment.idempotency_key == idempotency_key))
+
+
 def create_payment(
     session: Session, data: PaymentCreate, idempotency_key: str | None = None
 ) -> tuple[Payment, bool]:
@@ -20,7 +24,7 @@ def create_payment(
     Несуществующий тариф — `TariffNotFound`, неизвестный промокод — `UnknownPromoCode`.
     """
     if idempotency_key is not None:
-        existing = session.scalar(select(Payment).where(Payment.idempotency_key == idempotency_key))
+        existing = _find_by_idempotency_key(session, idempotency_key)
         if existing is not None:
             return existing, False
 
