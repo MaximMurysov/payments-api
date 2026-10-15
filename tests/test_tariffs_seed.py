@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session
 
+from app.config import Settings
 from app.main import create_app
 from app.models import Tariff
 from app.services.tariffs import DEFAULT_TARIFFS, seed_tariffs
@@ -31,13 +32,17 @@ def test_seed_is_idempotent(client: TestClient, session: Session) -> None:
 
 def test_restart_on_same_database_does_not_duplicate(tmp_path) -> None:
     db_url = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
+    # Явные настройки, как в conftest: `.env` разработчика не должен влиять на тест.
+    settings = Settings(_env_file=None, webhook_secret=None)
 
-    for _ in range(2):
-        app = create_app(db_url)
-        with TestClient(app):
-            pass
+    first = create_app(db_url, settings)
+    with TestClient(first):
+        pass
 
-    with app.state.session_factory() as db_session:
+    # Проверяем, пока приложение запущено: после выхода lifespan закрывает engine,
+    # и новое соединение осталось бы незакрытым.
+    second = create_app(db_url, settings)
+    with TestClient(second), second.state.session_factory() as db_session:
         assert len(_tariffs(db_session)) == 3
 
 
