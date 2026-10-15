@@ -1,3 +1,6 @@
+from collections.abc import Callable
+
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
@@ -34,9 +37,9 @@ def test_session_fixture_uses_test_database(session: Session, tmp_path) -> None:
     assert (tmp_path / "test.db").exists()
 
 
-def test_apps_do_not_share_database(tmp_path) -> None:
-    first = create_app(f"sqlite:///{(tmp_path / 'a.db').as_posix()}")
-    second = create_app(f"sqlite:///{(tmp_path / 'b.db').as_posix()}")
+def test_apps_do_not_share_database(tmp_path, make_app: Callable[..., FastAPI]) -> None:
+    first = make_app(f"sqlite:///{(tmp_path / 'a.db').as_posix()}")
+    second = make_app(f"sqlite:///{(tmp_path / 'b.db').as_posix()}")
 
     with TestClient(first), TestClient(second):
         with first.state.session_factory() as db_session:

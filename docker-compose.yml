@@ -16,11 +16,22 @@ services:
       timeout: 3s
       retries: 20
 
-  app:
+  # Разовая задача: применить миграции и выйти. Отдельно от `app`, чтобы схему не меняли сами
+  # экземпляры API при каждом старте.
+  migrate:
     build: .
+    command: ["alembic", "upgrade", "head"]
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://payments:payments@db:5432/payments
+
+  app:
+    build: .
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql+psycopg://payments:payments@db:5432/payments
       # Пусто — подпись вебхука не проверяется; значение берётся из окружения или из `.env`.

@@ -19,13 +19,14 @@ Windows (PowerShell):
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements-dev.txt
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
 Если `.venv\Scripts\activate` не запускается с сообщением «running scripts is disabled», разрешите
 выполнение скриптов для текущего пользователя: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-Либо не активируйте окружение и вызывайте его Python напрямую: `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`
-и `.venv\Scripts\python.exe -m uvicorn app.main:app --reload`.
+Либо не активируйте окружение и вызывайте его Python напрямую: `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`,
+`.venv\Scripts\python.exe -m alembic upgrade head` и `.venv\Scripts\python.exe -m uvicorn app.main:app --reload`.
 
 Linux / macOS:
 
@@ -33,10 +34,21 @@ Linux / macOS:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
 После запуска Swagger доступен на <http://127.0.0.1:8000/docs>.
+
+`alembic upgrade head` создаёт таблицы (миграции лежат в `migrations/`). Приложение само таблицы не
+создаёт: без миграций оно не стартует с ошибкой `no such table: tariffs`. Миграции берут базу из того же
+`DATABASE_URL`, что и приложение. Тарифы заполняются при старте приложения. Если `payments.db` осталась
+от версии проекта до миграций, удалите её или пометьте как актуальную: `alembic stamp head`.
+
+Новая миграция после правки `app/models.py`: `alembic revision --autogenerate -m "..."`, затем вычитать файл
+в `migrations/versions/`. Autogenerate не видит изменений `CHECK`, а для enum-колонок выдаёт каждый `CHECK`
+дважды. Поэтому enum-колонки в миграции пишутся вручную: `sa.String(32)` и один именованный `CHECK`, как
+в первой миграции. Что схема после миграций совпадает с моделями, проверяет `tests/test_migrations.py`.
 
 Настройки читаются из переменных окружения и из файла `.env` в папке запуска. Шаблон: `.env.example`
 (скопировать в `.env`, это необязательно: без `.env` работают значения по умолчанию).
@@ -54,7 +66,8 @@ uvicorn app.main:app --reload
 docker compose up --build
 ```
 
-Поднимаются Postgres 16 и API; API стартует после того, как база ответила на проверку готовности.
+Поднимаются Postgres 16, разовый сервис `migrate` (`alembic upgrade head`) и API. Миграции запускаются,
+когда база ответила на проверку готовности, API — после того, как миграции успешно завершились.
 Swagger — <http://127.0.0.1:8000/docs>, curl-примеры ниже работают без изменений. API публикуется только
 на `127.0.0.1:8000` (из локальной сети недоступен); порт должен быть свободен: остановите локальный
 `uvicorn`, если он запущен.
@@ -71,8 +84,11 @@ $env:WEBHOOK_SECRET = "s3cret"; docker compose up --build  # PowerShell
 ```
 
 Остановка — Ctrl+C или `docker compose down`. Данные Postgres лежат в томе и сохраняются между
-запусками; начать с чистой базы — `docker compose down -v`. Учётные данные БД (`payments` / `payments`)
-в `docker-compose.yml` годятся только для локальной разработки.
+запусками; начать с чистой базы — `docker compose down -v`. Том, созданный версией проекта до миграций,
+`migrate` не примет (`relation "tariffs" already exists`), и API не стартует. Либо удалите том
+(`docker compose down -v`), либо пометьте схему как актуальную:
+`docker compose run --rm migrate alembic stamp head`, затем снова `docker compose up`. Учётные данные БД
+(`payments` / `payments`) в `docker-compose.yml` годятся только для локальной разработки.
 
 ## Тесты и линтер
 
@@ -83,7 +99,8 @@ ruff check .                 # линт
 ruff format --check .        # проверка форматирования
 ```
 
-Каждый тест работает со своей свежей SQLite во временной папке и не трогает `payments.db`.
+Каждый тест работает со своей свежей SQLite во временной папке и не трогает `payments.db`. Схему тестам
+создаёт `Base.metadata.create_all`; что миграции дают ту же схему, проверяет `tests/test_migrations.py`.
 
 При прогоне pytest (pytest 9.1.1, httpx 0.28.1) выводится предупреждение `StarletteDeprecationWarning`
 про `httpx2`: оно относится к `TestClient`. ТЗ требует `httpx`, поэтому пакет оставлен как есть.
@@ -94,9 +111,9 @@ ruff format --check .        # проверка форматирования
 
 Примеры рассчитаны на **пустую базу**: id 1 и 2 и ключ `demo-key-1` работают только на свежем
 `payments.db`. Если вы уже запускали сервер и делали запросы, остановите его (Ctrl+C), удалите файл
-(`rm payments.db` в bash, `Remove-Item payments.db` в PowerShell) и запустите сервер снова. Удалять файл
-при работающем сервере нельзя: на Windows он занят, а на Linux сервер потеряет таблицы (они создаются
-только при старте) и будет отвечать 500.
+(`rm payments.db` в bash, `Remove-Item payments.db` в PowerShell), выполните `alembic upgrade head` и
+запустите сервер снова. Удалять файл при работающем сервере нельзя: на Windows он занят, а на Linux
+сервер потеряет таблицы и будет отвечать 500.
 
 Команды записаны в синтаксисе bash: в Git Bash они запускаются как есть. В Windows PowerShell 5.1 `curl` —
 алиас `Invoke-WebRequest`, и команды не работают как есть. Там используйте `curl.exe`, а JSON передавайте
@@ -278,17 +295,23 @@ curl.exe -s -X POST http://127.0.0.1:8000/webhooks/bank -H "Content-Type: applic
   Compose) вручную проверены сценарии из примеров ниже, гонка двух вебхуков на один платёж (ровно один
   `200` и один `409`, статус победителя не затёрт) и гонка запросов с одним `Idempotency-Key` (создаётся
   один платёж). Автотесты идут только на SQLite.
+- **Схема БД — только через миграции Alembic** (бонус). Приложение при старте таблицы не создаёт, только
+  заполняет тарифы; в Docker миграции выполняет отдельный сервис `migrate`, а не каждый экземпляр API.
+  Миграции не импортируют код приложения: enum-колонки в них — `VARCHAR` с явным `CHECK`, как их создаёт
+  модель. Автотесты миграций идут на SQLite; на Postgres 16 вручную проверено, что схема после миграции
+  совпадает с моделями.
 - **Ошибки валидации** — стандартный формат FastAPI (`422`, `detail` — список).
 
 ## Структура проекта
 
 ```
-app/main.py         # create_app(), lifespan (таблицы, сидинг тарифов), обработчики ошибок
+app/main.py         # create_app(), lifespan (сидинг тарифов), обработчики ошибок
 app/config.py       # настройки; app/db.py — engine и сессия на запрос
 app/models.py       # Tariff, Payment, enum-ы; schemas.py — Pydantic-схемы; errors.py — исключения
 app/services/       # pricing.py — чистые функции денег; payments.py, tariffs.py — бизнес-правила
 app/routers/        # HTTP: tariffs.py, payments.py, webhooks.py
+alembic.ini         # настройки Alembic; migrations/ — env.py и миграции схемы (versions/)
 Dockerfile          # образ API (python:3.11-slim); .dockerignore — белый список для сборки
-docker-compose.yml  # API + Postgres 16 для локального запуска
+docker-compose.yml  # API + Postgres 16 + разовые миграции для локального запуска
 tests/              # unit-тесты (pricing) и API-тесты (TestClient) с проверкой состояния БД
 ```
