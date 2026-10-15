@@ -121,12 +121,24 @@ def test_unknown_status_returns_422_and_keeps_status(client: TestClient) -> None
     ],
     ids=["no-status", "no-payment-id", "zero-id", "id-overflow", "id-as-string"],
 )
-def test_invalid_body_returns_422(client: TestClient, body: dict[str, Any]) -> None:
-    _create_payment(client)
+def test_invalid_body_returns_422_and_keeps_status(
+    client: TestClient, body: dict[str, Any]
+) -> None:
+    payment_id = _create_payment(client)
 
     response = client.post("/webhooks/bank", json=body)
 
     assert response.status_code == 422
+    assert _status(client, payment_id) == "pending"
+
+
+def test_webhook_openapi_declares_409_and_404(client: TestClient) -> None:
+    responses = client.get("/openapi.json").json()["paths"]["/webhooks/bank"]["post"]["responses"]
+
+    assert responses["409"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/InvalidTransitionOut"
+    }
+    assert "404" in responses
 
 
 def test_change_status_unknown_payment_raises(session: Session) -> None:
