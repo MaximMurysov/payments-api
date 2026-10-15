@@ -57,3 +57,17 @@ class ErrorOut(BaseModel):
     """Тело доменной ошибки (404, 422 от своих обработчиков) — как у HTTPException FastAPI."""
 
     detail: str
+
+
+class ValidationErrorItem(BaseModel):
+    """Ошибка из стандартного ответа FastAPI на ошибку валидации (без необязательных полей)."""
+
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class UnprocessableOut(BaseModel):
+    """Тело 422: список ошибок валидации FastAPI или строка доменной ошибки (`ErrorOut`)."""
+
+    detail: list[ValidationErrorItem] | str
