@@ -1,7 +1,7 @@
 # Payments API — правила работы
 
 API платежей для онлайн-школы: тарифы, создание платежа с промокодом и рассрочкой, `Idempotency-Key`,
-вебхук банка со статусами. Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.0 (sync), SQLite
+вебхук банка со статусами. Python 3.11+, FastAPI, Pydantic v2, SQLAlchemy 2.x (sync, API в стиле 2.0), SQLite
 (Postgres — опционально), pytest + httpx, ruff.
 
 ## Порядок работы
