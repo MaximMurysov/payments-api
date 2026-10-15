@@ -49,8 +49,8 @@ def _add_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(InvalidTransition)
     async def invalid_transition(request: Request, exc: InvalidTransition) -> JSONResponse:
-        # Чтобы отказ банку было видно в логах сервера. Только поля платежа: тело и заголовки
-        # запроса (подпись) не логируются.
+        # Отказ вебхуку пишем в лог, чтобы его было видно на сервере. Только поля платежа: тело
+        # и заголовки запроса (подпись) в лог не попадают.
         logger.warning(
             "invalid status transition: payment_id=%s %s -> %s",
             exc.payment_id,
