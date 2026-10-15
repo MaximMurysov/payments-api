@@ -1,3 +1,5 @@
+from typing import cast
+
 import pytest
 
 from app.errors import UnknownPromoCode
@@ -20,12 +22,14 @@ def test_resolve_promo_is_case_and_space_insensitive(code: str) -> None:
 
 def test_promo_codes_keys_are_normalized() -> None:
     # resolve_promo ищет код после strip().upper(): ключ в другом виде никогда бы не сработал.
+    assert PROMO_CODES
     assert all(code == code.strip().upper() for code in PROMO_CODES)
 
 
 def test_promo_codes_cannot_be_modified_at_runtime() -> None:
     with pytest.raises(TypeError):
-        PROMO_CODES["FREE100"] = 100
+        # cast: проверяем поведение во время работы, статический тип Mapping запись не допускает.
+        cast(dict[str, int], PROMO_CODES)["FREE100"] = 100
 
 
 @pytest.mark.parametrize("code", ["NOPE", "KVITTO1", "KVITTO100", "KVITTO 10"])
