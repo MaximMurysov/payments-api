@@ -39,8 +39,8 @@ def test_payment_create_rejects_invalid_email(email: str) -> None:
         PaymentCreate.model_validate({**VALID_CARD, "email": email})
 
 
-@pytest.mark.parametrize("tariff_id", [True, "1", 1.0, 0, -1])
-def test_payment_create_rejects_non_integer_or_non_positive_tariff_id(tariff_id: object) -> None:
+@pytest.mark.parametrize("tariff_id", [True, "1", 1.0, 0, -1, 2**31])
+def test_payment_create_rejects_invalid_tariff_id(tariff_id: object) -> None:
     # Без строгого режима JSON `true` молча превратился бы в тариф с id 1.
     with pytest.raises(ValidationError):
         PaymentCreate.model_validate({**VALID_CARD, "tariff_id": tariff_id})

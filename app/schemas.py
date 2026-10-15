@@ -16,7 +16,8 @@ class TariffOut(BaseModel):
 
 
 class PaymentCreate(BaseModel):
-    tariff_id: int = Field(strict=True, gt=0)
+    # Верхняя граница — INTEGER в БД: больший id дал бы 500 (переполнение) вместо 422.
+    tariff_id: int = Field(strict=True, gt=0, le=2**31 - 1)
     email: EmailStr
     method: PaymentMethod
     installment_months: Literal[3, 6, 12] | None = None
