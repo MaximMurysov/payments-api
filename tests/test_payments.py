@@ -186,6 +186,7 @@ def test_create_payment_ignores_client_money_and_status(
     stored = _stored(session, created["id"])
     assert (stored.amount, stored.discount) == (PRICES["standard"], 0)
     assert stored.status is PaymentStatus.PENDING
+    assert stored.schedule is None
 
 
 def test_each_request_without_idempotency_key_creates_payment(
@@ -217,6 +218,7 @@ def test_create_payment_unknown_tariff_is_422(client: TestClient, session: Sessi
 
     assert response.status_code == 422
     assert response.json() == {"detail": "Tariff 999999 not found"}
+    UnprocessableOut.model_validate(response.json())
     assert _payments_count(session) == 0
 
 
