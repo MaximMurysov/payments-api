@@ -1,7 +1,7 @@
 from collections.abc import Iterator
 
 from fastapi import Request
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
@@ -12,7 +12,8 @@ class Base(DeclarativeBase):
 def make_engine(url: str) -> Engine:
     # SQLite по умолчанию запрещает использовать соединение из другого потока,
     # а FastAPI выполняет синхронные обработчики в пуле потоков.
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
+    is_sqlite = make_url(url).get_backend_name() == "sqlite"
+    connect_args = {"check_same_thread": False} if is_sqlite else {}
     return create_engine(url, connect_args=connect_args)
 
 
