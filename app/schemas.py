@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.models import PaymentMethod, PaymentStatus
 
+# Верхняя граница id — INTEGER в БД: больший id дал бы 500 (переполнение) вместо 422.
+MAX_ID = 2**31 - 1
+
 
 class TariffOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -16,8 +19,7 @@ class TariffOut(BaseModel):
 
 
 class PaymentCreate(BaseModel):
-    # Верхняя граница — INTEGER в БД: больший id дал бы 500 (переполнение) вместо 422.
-    tariff_id: int = Field(strict=True, gt=0, le=2**31 - 1)
+    tariff_id: int = Field(strict=True, gt=0, le=MAX_ID)
     email: EmailStr
     method: PaymentMethod
     installment_months: Literal[3, 6, 12] | None = None
