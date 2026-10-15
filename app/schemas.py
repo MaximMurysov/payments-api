@@ -16,7 +16,7 @@ class TariffOut(BaseModel):
 
 
 class PaymentCreate(BaseModel):
-    tariff_id: int
+    tariff_id: int = Field(strict=True, gt=0)
     email: EmailStr
     method: PaymentMethod
     installment_months: Literal[3, 6, 12] | None = None
