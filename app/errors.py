@@ -24,7 +24,10 @@ class PaymentNotFound(DomainError):
 
 
 class InvalidTransition(DomainError):
-    def __init__(self, old: PaymentStatus, new: PaymentStatus) -> None:
-        super().__init__(f"invalid status transition: {old.value} -> {new.value}")
+    def __init__(self, payment_id: int, old: PaymentStatus, new: PaymentStatus) -> None:
+        super().__init__(
+            f"invalid status transition: payment_id={payment_id} {old.value} -> {new.value}"
+        )
+        self.payment_id = payment_id
         self.old = old
         self.new = new
