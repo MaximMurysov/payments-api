@@ -61,14 +61,17 @@ def test_calc_discount(price: int, percent: int, expected: int) -> None:
 
 
 TARIFF_PRICES = (990000, 1990000, 2990000)
+# Суммы к оплате по всем тарифам, без промокода и с ним. Суммы с промокодом делятся на 3/6/12
+# нацело, поэтому добавлены суммы с заведомым остатком: иначе остаток проверялся бы не везде.
+SCHEDULE_AMOUNTS = sorted(
+    {price - calc_discount(price, percent) for price in TARIFF_PRICES for percent in (0, 10)}
+    | {1000, 2989999}
+)
 
 
 @pytest.mark.parametrize("months", [3, 6, 12])
-@pytest.mark.parametrize("percent", [0, 10])
-@pytest.mark.parametrize("price", TARIFF_PRICES)
-def test_build_schedule_invariants(price: int, percent: int, months: int) -> None:
-    amount = price - calc_discount(price, percent)
-
+@pytest.mark.parametrize("amount", SCHEDULE_AMOUNTS)
+def test_build_schedule_invariants(amount: int, months: int) -> None:
     schedule = build_schedule(amount, months)
 
     assert sum(schedule) == amount
