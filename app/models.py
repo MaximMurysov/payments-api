@@ -46,11 +46,15 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.astimezone(UTC)
 
 
-def _enum_column_type(enum_cls: type[StrEnum]) -> Enum:
+def _enum_column_type(enum_cls: type[StrEnum], constraint_name: str) -> Enum:
     # В БД пишем значения ("card"), а не имена членов ("CARD"). VARCHAR + CHECK вместо типа ENUM
     # в Postgres: одинаково в SQLite и Postgres, а неизвестное значение отвергает сама БД.
+    # `name` — имя CHECK-ограничения; `length` с запасом, чтобы новое значение не требовало
+    # менять тип колонки.
     return Enum(
         enum_cls,
+        name=constraint_name,
+        length=32,
         native_enum=False,
         create_constraint=True,
         validate_strings=True,
@@ -78,7 +82,9 @@ class Payment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     tariff_id: Mapped[int] = mapped_column(ForeignKey("tariffs.id"))
     email: Mapped[str] = mapped_column(String(320))
-    method: Mapped[PaymentMethod] = mapped_column(_enum_column_type(PaymentMethod))
+    method: Mapped[PaymentMethod] = mapped_column(
+        _enum_column_type(PaymentMethod, "ck_payments_method")
+    )
     installment_months: Mapped[int | None]
     # Суммы в копейках: к оплате (цена тарифа минус скидка) и скидка.
     amount: Mapped[int]
@@ -88,7 +94,7 @@ class Payment(Base):
     # График рассрочки в копейках; None (SQL NULL, а не JSON 'null') — не рассрочка.
     schedule: Mapped[list[int] | None] = mapped_column(JSON(none_as_null=True))
     status: Mapped[PaymentStatus] = mapped_column(
-        _enum_column_type(PaymentStatus), default=PaymentStatus.PENDING
+        _enum_column_type(PaymentStatus, "ck_payments_status"), default=PaymentStatus.PENDING
     )
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=_utc_now)

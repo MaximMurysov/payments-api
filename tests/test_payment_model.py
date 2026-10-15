@@ -1,7 +1,7 @@
 from datetime import timedelta, timezone
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -147,3 +147,13 @@ def test_many_payments_without_idempotency_key_are_allowed(session: Session) -> 
     session.commit()
 
     assert session.scalar(select(func.count()).select_from(Payment)) == 2
+
+
+def test_enum_check_constraints_are_named_after_columns(session: Session) -> None:
+    # Имя по классу enum (`paymentstatus`) не говорит, какую колонку оно защищает, и даст
+    # конфликт имён в Postgres, если один enum понадобится в двух колонках.
+    constraints = inspect(session.get_bind()).get_check_constraints("payments")
+
+    names = {constraint["name"] for constraint in constraints}
+
+    assert {"ck_payments_method", "ck_payments_status"} <= names
