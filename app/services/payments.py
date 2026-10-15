@@ -3,9 +3,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import PaymentNotFound, TariffNotFound
-from app.models import Payment, Tariff
+from app.models import Payment, PaymentStatus, Tariff
 from app.schemas import PaymentCreate
 from app.services.pricing import build_schedule, calc_discount, normalize_promo_code, resolve_promo
+
+# Допустимые смены статуса платежа. Статусов `failed` и `refunded` в ключах нет: из них выхода нет.
+ALLOWED_TRANSITIONS: dict[PaymentStatus, frozenset[PaymentStatus]] = {
+    PaymentStatus.PENDING: frozenset({PaymentStatus.SUCCEEDED, PaymentStatus.FAILED}),
+    PaymentStatus.SUCCEEDED: frozenset({PaymentStatus.REFUNDED}),
+}
+
+
+def can_transition(old: PaymentStatus, new: PaymentStatus) -> bool:
+    """Разрешена ли смена статуса `old` → `new`. Повтор того же статуса запрещён."""
+    return new in ALLOWED_TRANSITIONS.get(old, frozenset())
 
 
 def _find_by_idempotency_key(session: Session, idempotency_key: str) -> Payment | None:
