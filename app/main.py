@@ -7,7 +7,8 @@ from sqlalchemy.orm import sessionmaker
 from app import models
 from app.config import Settings
 from app.db import make_engine
-from app.routers import tariffs
+from app.routers import payments as payments_router
+from app.routers import tariffs as tariffs_router
 from app.services.tariffs import seed_tariffs
 
 
@@ -40,7 +41,8 @@ def create_app(database_url: str | None = None, settings: Settings | None = None
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(tariffs.router)
+    app.include_router(tariffs_router.router)
+    app.include_router(payments_router.router)
 
     return app
 
