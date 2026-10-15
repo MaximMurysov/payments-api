@@ -1,11 +1,12 @@
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, inspect, select, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.exc import IntegrityError, StatementError
 from sqlalchemy.orm import Session
 
-from app.models import Payment, PaymentMethod, PaymentStatus, Tariff
+from app.models import Payment, PaymentMethod, PaymentStatus, Tariff, UTCDateTime
 
 
 def _tariff_id(session: Session) -> int:
@@ -157,3 +158,22 @@ def test_enum_check_constraints_are_named_after_columns(session: Session) -> Non
     names = {constraint["name"] for constraint in constraints}
 
     assert {"ck_payments_method", "ck_payments_status"} <= names
+
+
+def test_created_at_rejects_naive_datetime(session: Session) -> None:
+    # Naive-время непонятно в какой таймзоне: молча считать его UTC нельзя.
+    session.add(_payment(session, created_at=datetime(2026, 10, 15, 12, 0)))
+
+    with pytest.raises(StatementError, match="naive datetime"):
+        session.commit()
+    session.rollback()
+
+
+def test_utc_datetime_converts_aware_value_from_db_to_utc() -> None:
+    # Ветка Postgres (`timestamptz`): драйвер отдаёт aware-время в таймзоне сессии.
+    plus_three = datetime(2026, 10, 15, 15, 0, tzinfo=timezone(timedelta(hours=3)))
+
+    value = UTCDateTime().process_result_value(plus_three, postgresql.dialect())
+
+    assert value == plus_three
+    assert value is not None and value.utcoffset() == timedelta(0)
