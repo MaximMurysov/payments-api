@@ -193,9 +193,16 @@ def test_change_status_loses_race_when_status_changed_after_read(
         )
         rival.commit()
 
-    with pytest.raises(InvalidTransition):
+    with pytest.raises(InvalidTransition) as excinfo:
         change_status(session, payment_id, PaymentStatus.FAILED)
 
+    # Ошибка из ветки гонки несёт данные этого запроса: их пишет в лог обработчик 409.
+    error = excinfo.value
+    assert (error.payment_id, error.old, error.new) == (
+        payment_id,
+        PaymentStatus.PENDING,
+        PaymentStatus.FAILED,
+    )
     # Предпроверка видела устаревший pending и пропустила; отказал именно условный UPDATE.
     assert prechecks == [(PaymentStatus.PENDING, True)]
     with client.app.state.session_factory() as check:
