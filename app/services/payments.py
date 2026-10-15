@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.errors import PaymentNotFound, TariffNotFound
@@ -19,6 +20,8 @@ def create_payment(
     Возвращает `(платёж, created)`. Если передан `idempotency_key` и платёж с таким ключом уже есть,
     возвращает его с `created=False`, ничего не создавая: тело повторного запроса не сравнивается
     и не проверяется (осознанное решение; в продакшене стоило бы сверять хеш тела).
+    Гонку двух запросов с новым ключом разрешает `UNIQUE` в БД: проигравший запрос получает
+    платёж победителя.
 
     Цена берётся только из таблицы тарифов, не от клиента: поэтому `amount >= 0`.
     Несуществующий тариф — `TariffNotFound`, неизвестный промокод — `UnknownPromoCode`.
@@ -53,7 +56,18 @@ def create_payment(
         idempotency_key=idempotency_key,
     )
     session.add(payment)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        if idempotency_key is None:
+            raise
+        # Параллельный запрос с тем же ключом успел вставить платёж между нашими SELECT и INSERT:
+        # дубль не пропустил UNIQUE, отдаём его платёж. Нет платежа с ключом — ошибка другая.
+        existing = _find_by_idempotency_key(session, idempotency_key)
+        if existing is None:
+            raise
+        return existing, False
     return payment, True
 
 

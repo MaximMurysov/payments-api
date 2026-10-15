@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Payment, PaymentStatus, Tariff
 from app.schemas import UnprocessableOut
+from app.services import payments as payments_service
 from app.services.pricing import build_schedule
 
 EMAIL = "student@example.com"
@@ -417,3 +418,25 @@ def test_payment_without_idempotency_key_is_stored_with_null_key(
 
     assert response.status_code == 201
     assert _stored(session, response.json()["id"]).idempotency_key is None
+
+
+def test_concurrent_insert_with_same_key_returns_existing_payment(
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _post_with_key(client, "key-1", _body(session))
+    real_find = payments_service._find_by_idempotency_key
+    calls: list[str] = []
+
+    def find_missing_once(db_session: Session, key: str) -> Payment | None:
+        # Первый поиск «не видит» платёж: параллельный запрос вставил его между SELECT и INSERT.
+        calls.append(key)
+        return None if len(calls) == 1 else real_find(db_session, key)
+
+    monkeypatch.setattr(payments_service, "_find_by_idempotency_key", find_missing_once)
+
+    second = _post_with_key(client, "key-1", _body(session))
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert len(calls) == 2
+    assert _payments_count(session) == 1
