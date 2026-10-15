@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Tariff
@@ -18,4 +19,9 @@ def seed_tariffs(session: Session) -> None:
     session.add_all(
         Tariff(code=code, title=title, price=price) for code, title, price in DEFAULT_TARIFFS
     )
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError:
+        # Другой воркер заполнил таблицу между проверкой и вставкой: UNIQUE(code) не дал
+        # создать дубли, а наш commit откатываем и считаем работу выполненной.
+        session.rollback()

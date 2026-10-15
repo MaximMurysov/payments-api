@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, event, select
 from sqlalchemy.orm import Session
 
 from app.main import create_app
 from app.models import Tariff
-from app.services.tariffs import seed_tariffs
+from app.services.tariffs import DEFAULT_TARIFFS, seed_tariffs
 
 
 def _tariffs(session: Session) -> list[Tariff]:
@@ -39,3 +39,22 @@ def test_restart_on_same_database_does_not_duplicate(tmp_path) -> None:
 
     with app.state.session_factory() as db_session:
         assert len(_tariffs(db_session)) == 3
+
+
+def test_seed_survives_concurrent_seeding(client: TestClient, session: Session) -> None:
+    # Два воркера стартуют одновременно: оба увидели пустую таблицу, другой закоммитил раньше.
+    session.execute(delete(Tariff))
+    session.commit()
+
+    @event.listens_for(session, "before_commit", once=True)
+    def _other_worker_seeds_first(_: Session) -> None:
+        with client.app.state.session_factory() as other:
+            other.add_all(
+                Tariff(code=code, title=title, price=price)
+                for code, title, price in DEFAULT_TARIFFS
+            )
+            other.commit()
+
+    seed_tariffs(session)
+
+    assert [t.code for t in _tariffs(session)] == ["basic", "standard", "premium"]
