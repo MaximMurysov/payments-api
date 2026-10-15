@@ -333,9 +333,15 @@ def test_bad_signature_wins_over_404_422_409(
 
 def test_malformed_json_returns_422_before_signature_check(signed_client: TestClient) -> None:
     """FastAPI разбирает JSON раньше зависимостей; про платежи такой ответ ничего не раскрывает."""
-    response = _post_raw(signed_client, b'{"payment_id": ', None)
+    body = b'{"payment_id": '
 
-    assert response.status_code == 422
+    unsigned = _post_raw(signed_client, body, None)
+    signed = _post_raw(signed_client, body, _sign(body))
+
+    assert unsigned.status_code == 422
+    assert unsigned.json()["detail"][0]["type"] == "json_invalid"
+    # Ответ не зависит от подписи: он говорит только о том, что тело не разобралось как JSON.
+    assert (signed.status_code, signed.json()) == (unsigned.status_code, unsigned.json())
 
 
 def test_webhook_openapi_declares_401(client: TestClient) -> None:
