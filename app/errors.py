@@ -12,3 +12,9 @@ class TariffNotFound(DomainError):
     def __init__(self, tariff_id: int) -> None:
         super().__init__(f"tariff not found: {tariff_id}")
         self.tariff_id = tariff_id
+
+
+class PaymentNotFound(DomainError):
+    def __init__(self, payment_id: int) -> None:
+        super().__init__(f"payment not found: {payment_id}")
+        self.payment_id = payment_id

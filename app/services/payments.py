@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.errors import TariffNotFound
+from app.errors import PaymentNotFound, TariffNotFound
 from app.models import Payment, Tariff
 from app.schemas import PaymentCreate
 from app.services.pricing import build_schedule, calc_discount, normalize_promo_code, resolve_promo
@@ -37,4 +37,11 @@ def create_payment(session: Session, data: PaymentCreate) -> Payment:
     )
     session.add(payment)
     session.commit()
+    return payment
+
+
+def get_payment(session: Session, payment_id: int) -> Payment:
+    payment = session.get(Payment, payment_id)
+    if payment is None:
+        raise PaymentNotFound(payment_id)
     return payment

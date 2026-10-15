@@ -222,3 +222,68 @@ def test_create_payment_invalid_body_is_standard_422(
     # Стандартный ответ FastAPI на ошибку валидации: список ошибок в `detail`.
     assert isinstance(response.json()["detail"], list)
     assert _payments_count(session) == 0
+
+
+def test_get_payment_returns_created_payment(client: TestClient, session: Session) -> None:
+    created = client.post("/payments", json=_body(session, promo_code="kvitto10")).json()
+
+    response = client.get(f"/payments/{created['id']}")
+
+    assert response.status_code == 200
+    # Ответ GET собран из записи в БД, ответ POST — из объекта в памяти: они должны совпасть.
+    assert response.json() == created
+
+
+def test_get_payment_created_at_is_timezone_aware(client: TestClient, session: Session) -> None:
+    created = client.post("/payments", json=_body(session)).json()
+
+    created_at = client.get(f"/payments/{created['id']}").json()["created_at"]
+
+    # SQLite не хранит таймзону: без своего типа колонки здесь было бы время без смещения.
+    assert created_at.endswith(("Z", "+00:00"))
+    assert datetime.fromisoformat(created_at).utcoffset() == timedelta(0)
+
+
+@pytest.mark.parametrize("months", [3, 6, 12])
+def test_get_installment_payment_schedule_from_db(
+    client: TestClient, session: Session, months: int
+) -> None:
+    created = client.post(
+        "/payments",
+        json=_body(session, method="installment", installment_months=months, promo_code="KVITTO10"),
+    ).json()
+
+    body = client.get(f"/payments/{created['id']}").json()
+
+    assert body["schedule"] == build_schedule(body["amount"], months)
+    assert sum(body["schedule"]) == body["amount"] == PRICES_WITH_PROMO["standard"]
+
+
+# 2**31 - 1 — самый большой допустимый id: он проходит валидацию и честно ищется в БД.
+@pytest.mark.parametrize("payment_id", [999999, 2**31 - 1])
+def test_get_missing_payment_is_404(client: TestClient, session: Session, payment_id: int) -> None:
+    client.post("/payments", json=_body(session))
+
+    response = client.get(f"/payments/{payment_id}")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": f"Payment {payment_id} not found"}
+    assert _payments_count(session) == 1
+
+
+def test_get_payment_documents_404(client: TestClient) -> None:
+    responses = client.get("/openapi.json").json()["paths"]["/payments/{payment_id}"]["get"][
+        "responses"
+    ]
+
+    # Клиент, который читает /docs, должен видеть, что платежа может не быть.
+    assert "404" in responses
+
+
+@pytest.mark.parametrize("payment_id", ["abc", "1.5", "0", "-1", str(2**31)])
+def test_get_payment_invalid_id_is_422(client: TestClient, payment_id: str) -> None:
+    # 2**31 не помещается в INTEGER: без проверки запрос к БД упал бы с 500.
+    response = client.get(f"/payments/{payment_id}")
+
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
