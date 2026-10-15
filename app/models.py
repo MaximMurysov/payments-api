@@ -49,8 +49,8 @@ class UTCDateTime(TypeDecorator[datetime]):
 def _enum_column_type(enum_cls: type[StrEnum], constraint_name: str) -> Enum:
     # В БД пишем значения ("card"), а не имена членов ("CARD"). VARCHAR + CHECK вместо типа ENUM
     # в Postgres: одинаково в SQLite и Postgres, а неизвестное значение отвергает сама БД.
-    # `name` — имя CHECK-ограничения; `length` с запасом, чтобы новое значение не требовало
-    # менять тип колонки.
+    # `name` — имя CHECK-ограничения; `length` с запасом: новое значение потребует обновить
+    # CHECK, но не тип колонки.
     return Enum(
         enum_cls,
         name=constraint_name,
