@@ -16,9 +16,12 @@ def resolve_promo(code: str | None) -> int:
     `None` и пустая строка (в том числе из одних пробелов) — промокода нет, скидка 0 %.
     Неизвестный код — `UnknownPromoCode`.
     """
-    if code is None or not code.strip():
+    if code is None:
         return 0
-    percent = PROMO_CODES.get(code.strip().upper())
+    normalized = code.strip().upper()
+    if not normalized:
+        return 0
+    percent = PROMO_CODES.get(normalized)
     if percent is None:
         raise UnknownPromoCode(code)
     return percent
