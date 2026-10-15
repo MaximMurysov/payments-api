@@ -323,3 +323,88 @@ def test_get_payment_invalid_id_is_422(client: TestClient, payment_id: str) -> N
 
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], list)
+
+
+def _post_with_key(client: TestClient, key: str, body: dict[str, Any]):
+    return client.post("/payments", json=body, headers={"Idempotency-Key": key})
+
+
+def test_repeat_with_same_idempotency_key_returns_existing_payment(
+    client: TestClient, session: Session
+) -> None:
+    body = _body(session, method="installment", installment_months=6, promo_code="KVITTO10")
+
+    first = _post_with_key(client, "key-1", body)
+    second = _post_with_key(client, "key-1", body)
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert _payments_count(session) == 1
+    stored = _stored(session, first.json()["id"])
+    assert stored.idempotency_key == "key-1"
+
+
+def test_different_idempotency_keys_create_different_payments(
+    client: TestClient, session: Session
+) -> None:
+    first = _post_with_key(client, "key-1", _body(session))
+    second = _post_with_key(client, "key-2", _body(session))
+
+    assert (first.status_code, second.status_code) == (201, 201)
+    assert first.json()["id"] != second.json()["id"]
+    assert _payments_count(session) == 2
+
+
+def test_repeat_with_same_key_and_different_body_returns_first_payment(
+    client: TestClient, session: Session
+) -> None:
+    first = _post_with_key(client, "key-1", _body(session, method="card"))
+    second = _post_with_key(
+        client, "key-1", _body(session, method="installment", installment_months=3)
+    )
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert second.json()["method"] == "card"
+    assert _payments_count(session) == 1
+
+
+def test_repeat_with_same_key_skips_tariff_and_promo_checks(
+    client: TestClient, session: Session
+) -> None:
+    first = _post_with_key(client, "key-1", _body(session))
+
+    second = _post_with_key(client, "key-1", _body(session, promo_code="NOPE"))
+
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    assert _payments_count(session) == 1
+
+
+def test_failed_request_with_key_does_not_occupy_the_key(
+    client: TestClient, session: Session
+) -> None:
+    rejected = _post_with_key(client, "key-1", _body(session, promo_code="NOPE"))
+    created = _post_with_key(client, "key-1", _body(session))
+
+    assert rejected.status_code == 422
+    assert created.status_code == 201
+    assert _payments_count(session) == 1
+
+
+@pytest.mark.parametrize("key", ["", "k" * 256])
+def test_invalid_idempotency_key_is_422_and_nothing_is_created(
+    client: TestClient, session: Session, key: str
+) -> None:
+    response = _post_with_key(client, key, _body(session))
+
+    assert response.status_code == 422
+    assert _payments_count(session) == 0
+
+
+def test_max_length_idempotency_key_is_accepted(client: TestClient, session: Session) -> None:
+    response = _post_with_key(client, "k" * 255, _body(session))
+
+    assert response.status_code == 201
+    assert _stored(session, response.json()["id"]).idempotency_key == "k" * 255
