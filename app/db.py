@@ -1,7 +1,7 @@
 from collections.abc import Iterator
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import Request
+from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine, event, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -33,3 +33,7 @@ def get_session(request: Request) -> Iterator[Session]:
     session_factory: sessionmaker[Session] = request.app.state.session_factory
     with session_factory() as session:
         yield session
+
+
+# Зависимость «сессия на запрос» для роутеров: `session: SessionDep`.
+SessionDep = Annotated[Session, Depends(get_session)]

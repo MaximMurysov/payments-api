@@ -3,7 +3,13 @@ from typing import cast
 import pytest
 
 from app.errors import UnknownPromoCode
-from app.services.pricing import PROMO_CODES, build_schedule, calc_discount, resolve_promo
+from app.services.pricing import (
+    PROMO_CODES,
+    build_schedule,
+    calc_discount,
+    normalize_promo_code,
+    resolve_promo,
+)
 
 
 def test_resolve_promo_without_code_gives_no_discount() -> None:
@@ -44,6 +50,15 @@ def test_resolve_promo_unknown_code_raises(code: str) -> None:
 
     # Код сохраняется как прислан: пригодится для сообщения об ошибке на HTTP-слое.
     assert exc_info.value.code == code
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [(None, None), ("", None), ("   ", None), ("kvitto10", "KVITTO10"), (" Kvitto10 ", "KVITTO10")],
+)
+def test_normalize_promo_code(code: str | None, expected: str | None) -> None:
+    # Этот вид кода хранится в платеже: пустой промокод — None, а не пустая строка.
+    assert normalize_promo_code(code) == expected
 
 
 @pytest.mark.parametrize(
