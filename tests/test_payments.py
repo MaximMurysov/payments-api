@@ -408,3 +408,12 @@ def test_max_length_idempotency_key_is_accepted(client: TestClient, session: Ses
 
     assert response.status_code == 201
     assert _stored(session, response.json()["id"]).idempotency_key == "k" * 255
+
+
+def test_payment_without_idempotency_key_is_stored_with_null_key(
+    client: TestClient, session: Session
+) -> None:
+    response = client.post("/payments", json=_body(session))
+
+    assert response.status_code == 201
+    assert _stored(session, response.json()["id"]).idempotency_key is None
