@@ -1,9 +1,13 @@
 """Денежная арифметика: чистые функции без FastAPI и БД. Все суммы — int в копейках."""
 
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Final
+
 from app.errors import UnknownPromoCode
 
-# Код промокода (в верхнем регистре) → процент скидки.
-PROMO_CODES: dict[str, int] = {"KVITTO10": 10}
+# Код промокода (в верхнем регистре, без пробелов) → процент скидки. Только для чтения.
+PROMO_CODES: Final[Mapping[str, int]] = MappingProxyType({"KVITTO10": 10})
 
 
 def resolve_promo(code: str | None) -> int:

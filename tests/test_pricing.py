@@ -1,7 +1,7 @@
 import pytest
 
 from app.errors import UnknownPromoCode
-from app.services.pricing import calc_discount, resolve_promo
+from app.services.pricing import PROMO_CODES, calc_discount, resolve_promo
 
 
 def test_resolve_promo_without_code_gives_no_discount() -> None:
@@ -16,6 +16,16 @@ def test_resolve_promo_blank_code_means_no_promo(code: str) -> None:
 @pytest.mark.parametrize("code", ["KVITTO10", "kvitto10", " Kvitto10 ", "kViTtO10"])
 def test_resolve_promo_is_case_and_space_insensitive(code: str) -> None:
     assert resolve_promo(code) == 10
+
+
+def test_promo_codes_keys_are_normalized() -> None:
+    # resolve_promo ищет код после strip().upper(): ключ в другом виде никогда бы не сработал.
+    assert all(code == code.strip().upper() for code in PROMO_CODES)
+
+
+def test_promo_codes_cannot_be_modified_at_runtime() -> None:
+    with pytest.raises(TypeError):
+        PROMO_CODES["FREE100"] = 100
 
 
 @pytest.mark.parametrize("code", ["NOPE", "KVITTO1", "KVITTO100", "KVITTO 10"])
