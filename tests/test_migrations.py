@@ -1,4 +1,7 @@
 import logging
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +98,20 @@ def test_migrations_keep_logging_of_the_test_process(tmp_path: Path) -> None:
 
     assert root.level == level
     assert root.handlers == handlers
+
+
+def test_cli_works_outside_project_root(tmp_path: Path) -> None:
+    # `alembic -c <путь>/alembic.ini` из другой папки должен находить пакет `app`.
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", str(ALEMBIC_INI), "upgrade", "head"],
+        cwd=tmp_path,
+        env={**os.environ, "DATABASE_URL": _db_url(tmp_path)},
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "migrated.db").exists()
 
 
 def test_app_seeds_tariffs_on_migrated_database(tmp_path: Path) -> None:
