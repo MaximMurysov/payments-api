@@ -30,3 +30,14 @@ def resolve_promo(code: str | None) -> int:
 def calc_discount(price: int, percent: int) -> int:
     """Скидка в копейках; дробная копейка отбрасывается (округление вниз)."""
     return price * percent // 100
+
+
+def build_schedule(amount: int, months: int) -> list[int]:
+    """График рассрочки: `months` платежей в копейках, сумма ровно равна `amount`.
+
+    Платежи отличаются не больше чем на копейку; лишние копейки остатка — в первых платежах.
+    """
+    if months <= 0:
+        raise ValueError(f"months must be positive, got {months}")
+    base, rem = divmod(amount, months)
+    return [base + 1] * rem + [base] * (months - rem)
