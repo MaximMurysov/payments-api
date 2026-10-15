@@ -3,7 +3,7 @@ from typing import cast
 import pytest
 
 from app.errors import UnknownPromoCode
-from app.services.pricing import PROMO_CODES, calc_discount, resolve_promo
+from app.services.pricing import PROMO_CODES, build_schedule, calc_discount, resolve_promo
 
 
 def test_resolve_promo_without_code_gives_no_discount() -> None:
@@ -58,3 +58,48 @@ def test_calc_discount(price: int, percent: int, expected: int) -> None:
 
     assert discount == expected
     assert type(discount) is int
+
+
+TARIFF_PRICES = (990000, 1990000, 2990000)
+
+
+@pytest.mark.parametrize("months", [3, 6, 12])
+@pytest.mark.parametrize("percent", [0, 10])
+@pytest.mark.parametrize("price", TARIFF_PRICES)
+def test_build_schedule_invariants(price: int, percent: int, months: int) -> None:
+    amount = price - calc_discount(price, percent)
+
+    schedule = build_schedule(amount, months)
+
+    assert sum(schedule) == amount
+    assert len(schedule) == months
+    assert all(type(payment) is int for payment in schedule)
+    assert max(schedule) - min(schedule) <= 1
+    # Лишние копейки — в первых платежах: список не возрастает.
+    assert schedule == sorted(schedule, reverse=True)
+
+
+@pytest.mark.parametrize(
+    ("amount", "months", "expected"),
+    [
+        # Пример из ТЗ.
+        (1990000, 3, [663334, 663333, 663333]),
+        (1000, 3, [334, 333, 333]),
+        # Остаток больше 1: несколько лишних копеек, все в начале.
+        (1000, 6, [167] * 4 + [166] * 2),
+        (2990000, 12, [249167] * 8 + [249166] * 4),
+        # Делится нацело: все платежи равны.
+        (990000, 12, [82500] * 12),
+        # Сумма меньше числа месяцев: последние платежи нулевые, но сумма точная.
+        (2, 3, [1, 1, 0]),
+    ],
+)
+def test_build_schedule_exact(amount: int, months: int, expected: list[int]) -> None:
+    assert build_schedule(amount, months) == expected
+
+
+@pytest.mark.parametrize("months", [0, -3])
+def test_build_schedule_rejects_non_positive_months(months: int) -> None:
+    # Без проверки -3 молча дал бы пустой график, и сумма графика не совпала бы с amount.
+    with pytest.raises(ValueError):
+        build_schedule(1000, months)
