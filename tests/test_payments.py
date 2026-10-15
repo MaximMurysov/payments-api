@@ -46,7 +46,7 @@ def test_create_card_payment_without_promo(client: TestClient, session: Session)
 
     assert response.status_code == 201
     body = response.json()
-    assert body["amount"] == 1990000
+    assert body["amount"] == PRICES["standard"]
     assert body["discount"] == 0
     assert body["status"] == "pending"
     assert body["schedule"] is None
@@ -69,7 +69,7 @@ def test_create_card_payment_without_promo(client: TestClient, session: Session)
 
     assert _payments_count(session) == 1
     stored = _stored(session, body["id"])
-    assert stored.amount == 1990000
+    assert stored.amount == PRICES["standard"]
     assert stored.discount == 0
     assert stored.status is PaymentStatus.PENDING
     assert stored.promo_code is None
@@ -116,8 +116,11 @@ def test_create_payment_amount_with_promo_any_case(
     body = response.json()
     assert body["amount"] == PRICES_WITH_PROMO[tariff_code]
     assert body["discount"] == PRICES[tariff_code] - PRICES_WITH_PROMO[tariff_code]
+    stored = _stored(session, body["id"])
+    assert stored.amount == body["amount"]
+    assert stored.discount == body["discount"]
     # В платеже хранится нормализованный код, а не то, как его прислали.
-    assert _stored(session, body["id"]).promo_code == "KVITTO10"
+    assert stored.promo_code == "KVITTO10"
 
 
 @pytest.mark.parametrize("promo_code", ["", "   ", None])
@@ -128,7 +131,7 @@ def test_create_payment_blank_promo_means_no_promo(
 
     assert response.status_code == 201
     body = response.json()
-    assert body["amount"] == 1990000
+    assert body["amount"] == PRICES["standard"]
     assert body["discount"] == 0
     assert _stored(session, body["id"]).promo_code is None
 
@@ -145,8 +148,8 @@ def test_create_installment_payment_schedule(
     body = response.json()
     assert body["installment_months"] == months
     assert len(body["schedule"]) == months
-    assert sum(body["schedule"]) == body["amount"] == 1990000
-    assert body["schedule"] == build_schedule(1990000, months)
+    assert sum(body["schedule"]) == body["amount"] == PRICES["standard"]
+    assert body["schedule"] == build_schedule(PRICES["standard"], months)
     # График из JSON-колонки после чтения из БД — тот же список копеек.
     stored = _stored(session, body["id"])
     assert stored.schedule == body["schedule"]
@@ -161,9 +164,9 @@ def test_create_installment_payment_with_promo(client: TestClient, session: Sess
 
     assert response.status_code == 201
     body = response.json()
-    assert body["amount"] == 1791000
-    assert sum(body["schedule"]) == 1791000
-    assert body["schedule"] == build_schedule(1791000, 12)
+    assert body["amount"] == PRICES_WITH_PROMO["standard"]
+    assert sum(body["schedule"]) == PRICES_WITH_PROMO["standard"]
+    assert body["schedule"] == build_schedule(PRICES_WITH_PROMO["standard"], 12)
 
 
 def test_each_request_without_idempotency_key_creates_payment(
