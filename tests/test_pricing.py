@@ -26,6 +26,11 @@ def test_promo_codes_keys_are_normalized() -> None:
     assert all(code == code.strip().upper() for code in PROMO_CODES)
 
 
+def test_promo_codes_percents_are_valid() -> None:
+    # Скидка больше 100 % дала бы отрицательную сумму к оплате, 0 % — бесполезный промокод.
+    assert all(0 < percent <= 100 for percent in PROMO_CODES.values())
+
+
 def test_promo_codes_cannot_be_modified_at_runtime() -> None:
     with pytest.raises(TypeError):
         # cast: проверяем поведение во время работы, статический тип Mapping запись не допускает.
@@ -61,8 +66,8 @@ def test_calc_discount(price: int, percent: int, expected: int) -> None:
 
 
 TARIFF_PRICES = (990000, 1990000, 2990000)
-# Суммы к оплате по всем тарифам, без промокода и с ним. Половина из них (990000 и все суммы
-# с промокодом) делится на 3/6/12 нацело, поэтому добавлены суммы с заведомым остатком:
+# Суммы к оплате по всем тарифам, без промокода и с ним. Четыре из шести (990000 и все суммы
+# с промокодом) делятся на 3/6/12 нацело, поэтому добавлены суммы с заведомым остатком:
 # 1000 и 2989999 (не тарифная сумма, зато остаток 7 при 12 месяцах).
 SCHEDULE_AMOUNTS = sorted(
     {price - calc_discount(price, percent) for price in TARIFF_PRICES for percent in (0, 10)}
