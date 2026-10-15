@@ -25,11 +25,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine.dispose()
 
 
-def _unprocessable(message: str) -> JSONResponse:
-    # Доменная ошибка во входных данных — 422 в формате HTTPException FastAPI: {"detail": "..."}.
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, content={"detail": message}
-    )
+def _detail(status_code: int, message: str) -> JSONResponse:
+    # Доменная ошибка в формате HTTPException FastAPI: {"detail": "..."}.
+    return JSONResponse(status_code=status_code, content={"detail": message})
 
 
 def _add_exception_handlers(app: FastAPI) -> None:
@@ -38,18 +36,15 @@ def _add_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(UnknownPromoCode)
     async def unknown_promo_code(request: Request, exc: UnknownPromoCode) -> JSONResponse:
         # `exc.code`, а не `str(exc)`: там Python-repr для логов (`'NOPE'`).
-        return _unprocessable(f"Unknown promo code: {exc.code}")
+        return _detail(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Unknown promo code: {exc.code}")
 
     @app.exception_handler(TariffNotFound)
     async def tariff_not_found(request: Request, exc: TariffNotFound) -> JSONResponse:
-        return _unprocessable(f"Tariff {exc.tariff_id} not found")
+        return _detail(status.HTTP_422_UNPROCESSABLE_CONTENT, f"Tariff {exc.tariff_id} not found")
 
     @app.exception_handler(PaymentNotFound)
     async def payment_not_found(request: Request, exc: PaymentNotFound) -> JSONResponse:
-        return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
-            content={"detail": f"Payment {exc.payment_id} not found"},
-        )
+        return _detail(status.HTTP_404_NOT_FOUND, f"Payment {exc.payment_id} not found")
 
 
 def create_app(database_url: str | None = None, settings: Settings | None = None) -> FastAPI:
