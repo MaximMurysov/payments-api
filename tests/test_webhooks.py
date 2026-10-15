@@ -110,23 +110,42 @@ def test_unknown_status_returns_422_and_keeps_status(client: TestClient) -> None
     assert _status(client, payment_id) == "pending"
 
 
+# "PID" и "PID_STR" подставляются id созданного платежа: тогда случаи с ссылкой на платёж проверяют
+# именно его статус. Литеральные id (0, 2**31) платёж не адресуют, для них проверяется только 422.
 @pytest.mark.parametrize(
     "body",
     [
-        {"payment_id": 1},
+        {"payment_id": "PID"},
         {"status": "succeeded"},
         {"payment_id": 0, "status": "succeeded"},
         {"payment_id": 2**31, "status": "succeeded"},
-        {"payment_id": "1", "status": "succeeded"},
+        {"payment_id": "PID_STR"},
     ],
     ids=["no-status", "no-payment-id", "zero-id", "id-overflow", "id-as-string"],
 )
-def test_invalid_body_returns_422(client: TestClient, body: dict[str, Any]) -> None:
-    _create_payment(client)
+def test_invalid_body_returns_422_and_keeps_status(
+    client: TestClient, body: dict[str, Any]
+) -> None:
+    payment_id = _create_payment(client)
+    filled = {
+        key: payment_id if value == "PID" else str(payment_id) if value == "PID_STR" else value
+        for key, value in body.items()
+    }
 
-    response = client.post("/webhooks/bank", json=body)
+    response = client.post("/webhooks/bank", json=filled)
 
     assert response.status_code == 422
+    assert _status(client, payment_id) == "pending"
+
+
+def test_webhook_openapi_declares_409_and_404(client: TestClient) -> None:
+    responses = client.get("/openapi.json").json()["paths"]["/webhooks/bank"]["post"]["responses"]
+
+    assert responses["409"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/InvalidTransitionOut"
+    }
+    # Presence check: схему 404 проверяет тест формата `GET /payments/{id}`.
+    assert "404" in responses
 
 
 def test_change_status_unknown_payment_raises(session: Session) -> None:
