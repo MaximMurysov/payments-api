@@ -1,6 +1,8 @@
 # В образ попадает только то, что нужно для запуска: белый список; кэши Python исключены.
 *
 !app
+!alembic.ini
+!migrations
 !requirements.txt
 **/__pycache__
 **/*.pyc
