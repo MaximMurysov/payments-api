@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import Settings
 from app.db import Base, make_engine
+from app.routers import tariffs
 from app.services.tariffs import seed_tariffs
 
 
@@ -36,6 +37,8 @@ def create_app(database_url: str | None = None, settings: Settings | None = None
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    app.include_router(tariffs.router)
 
     return app
 
