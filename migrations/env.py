@@ -8,8 +8,10 @@ from app.config import Settings
 
 config = context.config
 
-if config.config_file_name is not None:
-    # Не глушим логгеры, созданные до миграций (uvicorn, приложение, pytest).
+# Логирование из alembic.ini — для CLI. Тесты запускают миграции в своём процессе и отключают его
+# (`configure_logger = False`), чтобы не перенастраивать root-логгер pytest.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    # Не глушим логгеры, созданные до миграций (uvicorn, приложение).
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Импорт `app.models` регистрирует в metadata все таблицы — по ней работает autogenerate.

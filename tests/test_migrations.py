@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ def _alembic_config(db_url: str) -> Config:
     config = Config(ALEMBIC_INI)
     # `%` в значениях ini — синтаксис интерполяции configparser, его нужно экранировать.
     config.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
+    # Логирование настраивает pytest, а не alembic.ini (см. migrations/env.py).
+    config.attributes["configure_logger"] = False
     return config
 
 
@@ -81,6 +84,17 @@ def test_downgrade_removes_all_tables(tmp_path: Path) -> None:
         assert inspect(engine).get_table_names() == ["alembic_version"]
     finally:
         engine.dispose()
+
+
+def test_migrations_keep_logging_of_the_test_process(tmp_path: Path) -> None:
+    # Иначе `fileConfig` из env.py до конца сессии pytest меняет уровень и handlers root-логгера.
+    root = logging.getLogger()
+    level, handlers = root.level, list(root.handlers)
+
+    command.upgrade(_alembic_config(_db_url(tmp_path)), "head")
+
+    assert root.level == level
+    assert root.handlers == handlers
 
 
 def test_app_seeds_tariffs_on_migrated_database(tmp_path: Path) -> None:
